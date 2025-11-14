@@ -1,0 +1,1481 @@
+import base64
+import os
+import pickle
+from functools import lru_cache
+from pathlib import Path
+import xgboost
+import pandas as pd
+import streamlit as st
+
+# ---------------------------------------
+# CONFIG – paths + feature list
+# ---------------------------------------
+DATA_PATH = "epl_clean1.csv"
+MODEL_PATH = "team_form_model.pkl"
+LOGO_DIR = Path("Logo")
+
+FEATURE_COLS = [
+    'is_home', 'season_week', 'days_since_last_match', 'h2h_win_rate',
+    'avg_goals_scored_last5', 'avg_goals_conceded_last5',
+    'avg_shots_last5', 'avg_shots_on_target_last5',
+    'avg_shot_conversion_rate_last5', 'avg_shot_accuracy_rate_last5',
+    'season_avg_goals_scored', 'season_avg_goals_conceded',
+    'avg_shots_season', 'avg_shots_on_target_season',
+    'avg_shot_conversion_rate_season', 'avg_shot_accuracy_rate_season',
+    'previous_avg_goals_scored', 'previous_avg_goals_conceded',
+    'previous_avg_shots', 'previous_avg_shots_on_target',
+    'previous_avg_shot_conversion_rate', 'previous_avg_shot_accuracy_rate',
+    'opp_avg_goals_scored_last5', 'opp_avg_goals_conceded_last5',
+    'opp_avg_shots_last5', 'opp_avg_shots_on_target_last5',
+    'opp_clean_sheet_rate_last5',
+    'opp_avg_shot_conversion_rate_last5', 'opp_avg_shot_accuracy_rate_last5',
+]
+
+
+# ---------------------------------------
+# LOADING + PREDICTIONS
+# ---------------------------------------
+@st.cache_data
+def load_data_with_predictions(data_path: str, model_path: str) -> pd.DataFrame:
+    """Load dataset, model, and add prediction columns for all rows."""
+    df = pd.read_csv(data_path, parse_dates=["MatchDate"])
+    df = df.reset_index(drop=True)
+
+    # Ensure numeric features
+    for col in FEATURE_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Load model
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)
+
+    # Predict for all rows
+    X = df[FEATURE_COLS].copy()
+    X = X.apply(pd.to_numeric, errors="coerce").astype("float64")
+    proba = model.predict_proba(X)[:, 1]
+    pred_label = (proba >= 0.5).astype(int)
+
+    df["PredProba"] = proba
+    df["PredLabel"] = pred_label
+
+    return df
+
+
+# ---------------------------------------
+# GENERIC HELPERS
+# ---------------------------------------
+def result_to_code(res):
+    """Normalize result to 'W', 'D', or 'L'."""
+    if pd.isna(res):
+        return ""
+    s = str(res).strip().upper()
+    if s in ["W", "WIN", "WON"]:
+        return "W"
+    if s in ["D", "DRAW"]:
+        return "D"
+    if s in ["L", "LOSS", "LOST"]:
+        return "L"
+    return s[0]
+
+
+def points_from_result(res):
+    """Map result to league points."""
+    code = result_to_code(res)
+    if code == "W":
+        return 3
+    if code == "D":
+        return 1
+    return 0
+
+
+def last5_record_string(df: pd.DataFrame, season, team, current_date):
+    """
+    Return W/L/D string of last 5 matches BEFORE current_date for this team & season,
+    e.g. 'W D L L W'.
+    """
+    mask = (
+        (df["Season"] == season) &
+        (df["Team"] == team) &
+        (df["MatchDate"] < current_date)
+    )
+    prev_matches = df[mask].sort_values("MatchDate", ascending=False)
+    last5_raw = prev_matches["Result"].head(5).tolist()
+    last5_codes = [result_to_code(r) for r in last5_raw]
+    return " ".join(last5_codes[::-1])  # oldest → newest
+
+
+def get_seasons(df: pd.DataFrame):
+    return sorted(df["Season"].unique())
+
+
+def get_teams_for_season(df: pd.DataFrame, season):
+    return sorted(df.loc[df["Season"] == season, "Team"].unique())
+
+
+def get_prev_season(seasons, current_season):
+    seasons_sorted = sorted(seasons)
+    if current_season not in seasons_sorted:
+        return None
+    idx = seasons_sorted.index(current_season)
+    if idx == 0:
+        return None
+    return seasons_sorted[idx - 1]
+
+
+def get_match_pair(df: pd.DataFrame, row_home: pd.Series):
+    """
+    Given a home-team row, return (home_row, away_row) for that match.
+    Uses Season + MatchDate + swapped Team/Opponent.
+    """
+    season_val = row_home["Season"]
+    date_val = row_home["MatchDate"]
+    home = row_home["Team"]
+    away = row_home["Opponent"]
+
+    mask = (
+        (df["Season"] == season_val) &
+        (df["MatchDate"] == date_val) &
+        (df["Team"] == away) &
+        (df["Opponent"] == home)
+    )
+    opp_rows = df[mask]
+    if opp_rows.empty:
+        return row_home, None
+    return row_home, opp_rows.iloc[0]
+
+
+def calculate_time_weight(matchweek: int, total_matchweeks: int = 38) -> float:
+    """
+    Calculate time weight for stakes adjustment based on season progression.
+
+    Season phases:
+    - Early Season (0-25%): 10% weight (matchweeks 1-9)
+    - Mid Season (25-65%): 40% weight (matchweeks 10-25)
+    - Late Season (65-90%): 70% weight (matchweeks 26-34)
+    - Final Stretch (90-100%): 100% weight (matchweeks 35-38)
+
+    Args:
+        matchweek: Current matchweek (1-38)
+        total_matchweeks: Total matchweeks in season (default 38 for EPL)
+
+    Returns:
+        float: Time weight multiplier (0.10 - 1.00)
+
+    Example:
+        >>> calculate_time_weight(5)   # Early season
+        0.10
+        >>> calculate_time_weight(15)  # Mid season
+        0.40
+        >>> calculate_time_weight(30)  # Late season
+        0.70
+        >>> calculate_time_weight(37)  # Final stretch
+        1.00
+    """
+    if matchweek <= (total_matchweeks * 0.25):  # First 25% (~9 games)
+        return 0.30
+    elif matchweek <= (total_matchweeks * 0.65):  # Up to 65% (~25 games)
+        return 0.60
+    elif matchweek <= (total_matchweeks * 0.90):  # Up to 90% (~34 games)
+        return 0.90
+    else:  # Final 10% (~35-38 games)
+        return 1.00
+
+
+def calculate_stakes_score(team_a_position: int, team_b_position: int, total_teams: int = 20, matchweek: int = 38) -> float:
+    """
+    Calculate stakes score (0-2.0) based on league positions and match context, adjusted by season timing.
+
+    Args:
+        team_a_position: League position of team A (1 = first place)
+        team_b_position: League position of team B (1 = first place)
+        total_teams: Total teams in league (default 20 for EPL)
+        matchweek: Current matchweek (1-38, default 38 for full weight)
+
+    Returns:
+        float: Time-adjusted stakes score from 0.0 to 2.0
+
+    Base scoring rules (priority order):
+        - Title race (both top 3): 2.0
+        - Relegation six-pointer (both bottom 3): 2.0
+        - Relegation danger (both bottom 5): 1.7
+        - Champions League race (both 4-7): 1.6
+        - Title vs challenger (one top 3, other 4-6): 1.5
+        - Europa League race (both 5-10): 1.2
+        - David vs Goliath (gap >= 10): 0.5
+        - Mid-table clash (both 8-15): 0.2
+        - Default: 0.0
+
+    Time adjustment:
+        - Early season (weeks 1-9): 10% weight
+        - Mid season (weeks 10-25): 40% weight
+        - Late season (weeks 26-34): 70% weight
+        - Final stretch (weeks 35-38): 100% weight
+    """
+    # Handle None/invalid positions
+    if team_a_position is None or team_b_position is None:
+        return 0.5  # Neutral stakes if position unknown
+
+    # Calculate base stakes
+    base_stakes = 0.0
+
+    # Title race - both in top 3
+    if team_a_position <= 3 and team_b_position <= 3:
+        base_stakes = 2.0
+
+    # Relegation six-pointer - both in bottom 3
+    elif team_a_position >= (total_teams - 2) and team_b_position >= (total_teams - 2):
+        base_stakes = 2.0
+
+    # Relegation danger - both in bottom 5
+    elif team_a_position >= (total_teams - 4) and team_b_position >= (total_teams - 4):
+        base_stakes = 1.7
+
+    # Champions League race - both in positions 4-7
+    elif (4 <= team_a_position <= 7) and (4 <= team_b_position <= 7):
+        base_stakes = 1.6
+
+    # Title contender vs challenger
+    elif (team_a_position <= 3 and 4 <= team_b_position <= 6) or \
+         (team_b_position <= 3 and 4 <= team_a_position <= 6):
+        base_stakes = 1.5
+
+    # Europa League race - both in positions 5-10
+    elif (5 <= team_a_position <= 10) and (5 <= team_b_position <= 10):
+        base_stakes = 1.2
+
+    # David vs Goliath - large position gap
+    elif abs(team_a_position - team_b_position) >= 10:
+        base_stakes = 0.5
+
+    # Mid-table clash - both in positions 8-15
+    elif (8 <= team_a_position <= 15) and (8 <= team_b_position <= 15):
+        base_stakes = 0.2
+
+    # Apply time weight
+    time_weight = calculate_time_weight(matchweek)
+    adjusted_stakes = base_stakes * time_weight
+
+    return adjusted_stakes
+
+
+def calculate_match_worthiness(
+    team_a_prob: float,
+    team_b_prob: float,
+    team_a_position: int = None,
+    team_b_position: int = None,
+    total_teams: int = 20,
+    matchweek: int = 38
+) -> dict:
+    """
+    Calculate comprehensive match worthiness score (0-10 scale) with time-adjusted stakes.
+
+    Combines 4 factors:
+    - Quality (40%): Average team performance level
+    - Competitiveness (25%): How evenly matched teams are
+    - Unpredictability (15%): Outcome uncertainty
+    - Stakes (20%): Match importance based on league position and season timing
+
+    Args:
+        team_a_prob: Team A performance probability (0.0-1.0)
+        team_b_prob: Team B performance probability (0.0-1.0)
+        team_a_position: Team A league position (optional)
+        team_b_position: Team B league position (optional)
+        total_teams: Total teams in league (default 20)
+        matchweek: Current matchweek (1-38, default 38 for full weight)
+
+    Returns:
+        dict with keys:
+            - total_score (0-10)
+            - quality_score (0-4)
+            - competitiveness_score (0-2.5)
+            - unpredictability_score (0-1.5)
+            - stakes_score (0-2.0, time-adjusted)
+            - matchweek (int)
+            - time_weight (float)
+            - recommendation (classification label)
+            - priority (priority level)
+            - breakdown (dict with component percentages)
+    """
+    # Factor 1: Quality (0-4 points, 40%)
+    avg_performance = (team_a_prob + team_b_prob) / 2
+    quality_score = avg_performance * 4
+
+    # Factor 2: Competitiveness (0-2.5 points, 25%)
+    prob_difference = abs(team_a_prob - team_b_prob)
+    competitiveness_score = (1 - prob_difference) * 2.5
+
+    # Factor 3: Unpredictability (0-1.5 points, 15%)
+    # Probabilities near 0.5 = most unpredictable
+    unpred_a = max(0, 1 - abs(team_a_prob - 0.5) * 2)
+    unpred_b = max(0, 1 - abs(team_b_prob - 0.5) * 2)
+    avg_unpredictability = (unpred_a + unpred_b) / 2
+    unpredictability_score = avg_unpredictability * 1.5
+
+    # Factor 4: Stakes with time adjustment (0-2.0 points, 20%)
+    stakes_score = calculate_stakes_score(team_a_position, team_b_position, total_teams, matchweek)
+
+    # Total score
+    total_score = quality_score + competitiveness_score + unpredictability_score + stakes_score
+
+    # Classification
+    recommendation, priority = classify_match_score(total_score)
+
+    # Calculate breakdown percentages
+    breakdown = {
+        "quality_pct": round((quality_score / total_score * 100) if total_score > 0 else 0, 1),
+        "competitiveness_pct": round((competitiveness_score / total_score * 100) if total_score > 0 else 0, 1),
+        "unpredictability_pct": round((unpredictability_score / total_score * 100) if total_score > 0 else 0, 1),
+        "stakes_pct": round((stakes_score / total_score * 100) if total_score > 0 else 0, 1),
+    }
+
+    return {
+        "total_score": round(total_score, 2),
+        "quality_score": round(quality_score, 2),
+        "competitiveness_score": round(competitiveness_score, 2),
+        "unpredictability_score": round(unpredictability_score, 2),
+        "stakes_score": round(stakes_score, 2),
+        "matchweek": matchweek,
+        "time_weight": calculate_time_weight(matchweek),
+        "recommendation": recommendation,
+        "priority": priority,
+        "breakdown": breakdown
+    }
+
+
+def classify_match_score(total_score: float) -> tuple:
+    """
+    Classify match worthiness score into recommendation category.
+
+    Args:
+        total_score: Match worthiness score (0-10)
+
+    Returns:
+        tuple: (recommendation_text, priority_level)
+
+    Categories:
+        - 5.0-10.0: Worth Watching (WORTH)
+        - 3.0-4.9: Maybe (MAYBE)
+        - 0.0-2.9: Skip (SKIP)
+    """
+    if total_score >= 5.0:
+        return "👍 Worth Watching", "WORTH"
+    elif total_score >= 3.5:
+        return "🤔 Maybe", "MAYBE"
+    else:
+        return "⏭️ Skip", "SKIP"
+
+
+def build_full_league_table(df: pd.DataFrame, season):
+    """
+    Full-season league table for a given season.
+    """
+    season_df = df[df["Season"] == season].copy()
+    if season_df.empty:
+        return pd.DataFrame()
+
+    season_df["ResultCode"] = season_df["Result"].apply(result_to_code)
+    season_df["Points"] = season_df["ResultCode"].apply(points_from_result)
+
+    grouped = season_df.groupby("Team").agg(
+        Played=("ResultCode", "count"),
+        Wins=("ResultCode", lambda x: (x == "W").sum()),
+        Draws=("ResultCode", lambda x: (x == "D").sum()),
+        Losses=("ResultCode", lambda x: (x == "L").sum()),
+        GoalsFor=("GoalsFor", "sum"),
+        GoalsAgainst=("GoalsAgainst", "sum"),
+        Points=("Points", "sum"),
+    ).reset_index()
+
+    grouped["GoalDiff"] = grouped["GoalsFor"] - grouped["GoalsAgainst"]
+    grouped = grouped.sort_values(
+        ["Points", "GoalDiff", "GoalsFor"],
+        ascending=[False, False, False]
+    ).reset_index(drop=True)
+
+    grouped.index = grouped.index + 1
+    grouped.insert(0, "Pos", grouped.index)
+    return grouped
+
+
+def build_league_table_up_to_week(df: pd.DataFrame, season, current_week):
+    """
+    League table up to a given gameweek (1..N).
+    """
+    season_df = df[(df["Season"] == season) & (df["season_week"] <= current_week)].copy()
+    if season_df.empty:
+        return pd.DataFrame()
+
+    season_df["ResultCode"] = season_df["Result"].apply(result_to_code)
+    season_df["Points"] = season_df["ResultCode"].apply(points_from_result)
+
+    grouped = season_df.groupby("Team").agg(
+        Played=("ResultCode", "count"),
+        Wins=("ResultCode", lambda x: (x == "W").sum()),
+        Draws=("ResultCode", lambda x: (x == "D").sum()),
+        Losses=("ResultCode", lambda x: (x == "L").sum()),
+        GoalsFor=("GoalsFor", "sum"),
+        GoalsAgainst=("GoalsAgainst", "sum"),
+        Points=("Points", "sum"),
+    ).reset_index()
+
+    grouped["GoalDiff"] = grouped["GoalsFor"] - grouped["GoalsAgainst"]
+    grouped = grouped.sort_values(
+        ["Points", "GoalDiff", "GoalsFor"],
+        ascending=[False, False, False]
+    ).reset_index(drop=True)
+
+    grouped.index = grouped.index + 1
+    grouped.insert(0, "Pos", grouped.index)
+    return grouped
+
+
+def get_team_position_at_week(df: pd.DataFrame, season, team: str, week: int) -> int:
+    """
+    Get a team's league position at a specific gameweek.
+
+    Args:
+        df: Full dataset
+        season: Season identifier
+        team: Team name
+        week: Gameweek number (uses week-1 for completed matches)
+
+    Returns:
+        int: League position (1-20), or None if not found
+    """
+    # Use week-1 to get position based on completed matches
+    # For gameweek 1, position is unknown (no matches played)
+    if week <= 1:
+        return None
+
+    # Build table up to previous week (completed matches only)
+    table = build_league_table_up_to_week(df, season, week - 1)
+
+    if table.empty:
+        return None
+
+    # Find team's position
+    team_row = table[table["Team"] == team]
+    if team_row.empty:
+        return None
+
+    return int(team_row.iloc[0]["Pos"])
+
+
+def get_stakes_context(team_a_pos: int, team_b_pos: int, total_teams: int = 20) -> str:
+    """
+    Get descriptive context label for match stakes.
+
+    Returns:
+        str: Context label (e.g., "Title Race", "Relegation Battle")
+    """
+    if team_a_pos is None or team_b_pos is None:
+        return "Unknown Stakes"
+
+    # Same logic as calculate_stakes_score
+    if team_a_pos <= 3 and team_b_pos <= 3:
+        return "Title Race"
+
+    relegation_zone = total_teams - 2
+    if team_a_pos >= relegation_zone and team_b_pos >= relegation_zone:
+        return "Relegation Six-Pointer"
+
+    danger_zone = total_teams - 4
+    if team_a_pos >= danger_zone and team_b_pos >= danger_zone:
+        return "Relegation Battle"
+
+    if (4 <= team_a_pos <= 7) and (4 <= team_b_pos <= 7):
+        return "Champions League Race"
+
+    if (team_a_pos <= 3 and 4 <= team_b_pos <= 6) or \
+       (team_b_pos <= 3 and 4 <= team_a_pos <= 6):
+        return "Title Contender vs Challenger"
+
+    if (5 <= team_a_pos <= 10) and (5 <= team_b_pos <= 10):
+        return "Europa League Race"
+
+    if abs(team_a_pos - team_b_pos) >= 10:
+        return "David vs Goliath"
+
+    if (8 <= team_a_pos <= 15) and (8 <= team_b_pos <= 15):
+        return "Mid-Table Clash"
+
+    return "No Significant Stakes"
+
+
+def to_display_series(row: pd.Series):
+    """Copy row and replace numeric NaNs with 0 for display."""
+    df_temp = row.to_frame().T
+    num_cols = df_temp.select_dtypes(include=["number"]).columns
+    df_temp[num_cols] = df_temp[num_cols].fillna(0)
+    return df_temp.iloc[0]
+
+
+def compute_team_ratings(df_raw: pd.DataFrame, current_season, team: str):
+    """
+    Compute 1–5 star ratings (overall, attack, defense, control) for a team,
+    based on:
+      - first season in dataset  -> global averages across ALL seasons
+      - later seasons            -> previous season's averages only
+
+    Metrics:
+      - Overall : MPI
+      - Attack  : Off_raw_norm
+      - Defense : Def_raw_norm
+      - Control : Ctrl_raw_norm
+    """
+    # Global per-team
+    global_agg = (
+        df_raw.groupby("Team")
+        .agg({
+            "MPI": "mean",
+            "Off_raw_norm": "mean",
+            "Def_raw_norm": "mean",
+            "Ctrl_raw_norm": "mean",
+        })
+        .reset_index()
+    )
+
+    season_team_agg = (
+        df_raw.groupby(["Season", "Team"])
+        .agg({
+            "MPI": "mean",
+            "Off_raw_norm": "mean",
+            "Def_raw_norm": "mean",
+            "Ctrl_raw_norm": "mean",
+        })
+        .reset_index()
+    )
+
+    seasons_sorted = sorted(df_raw["Season"].unique())
+    if not seasons_sorted:
+        return {"overall": 3, "attack": 3, "defense": 3, "control": 3,
+                "source": "none", "prev_season": None}
+
+    earliest = seasons_sorted[0]
+
+    if current_season not in seasons_sorted:
+        base_agg = global_agg
+        row = base_agg[base_agg["Team"] == team]
+        source = "global"
+        prev_season = None
+    elif current_season == earliest:
+        base_agg = global_agg
+        row = base_agg[base_agg["Team"] == team]
+        source = "global"
+        prev_season = None
+    else:
+        idx = seasons_sorted.index(current_season)
+        prev_season = seasons_sorted[idx - 1]
+        season_agg = season_team_agg[season_team_agg["Season"] == prev_season]
+        row = season_agg[season_agg["Team"] == team]
+        if row.empty:
+            base_agg = global_agg
+            row = base_agg[base_agg["Team"] == team]
+            source = "global"
+            prev_season = None
+        else:
+            base_agg = season_agg
+            source = "prev"
+
+    if row.empty:
+        return {"overall": 3, "attack": 3, "defense": 3, "control": 3,
+                "source": source, "prev_season": prev_season}
+
+    row = row.iloc[0]
+
+    def scale_to_stars(val, series, reverse=False):
+        series = series.dropna()
+        if series.empty or pd.isna(val):
+            return 3
+        vmin, vmax = series.min(), series.max()
+        if vmin == vmax:
+            return 3
+        if reverse:
+            norm = (vmax - val) / (vmax - vmin)
+        else:
+            norm = (val - vmin) / (vmax - vmin)
+        stars = 1 + norm * 4
+        stars = int(round(stars))
+        stars = max(1, min(5, stars))
+        return stars
+
+    overall = scale_to_stars(row["MPI"], base_agg["MPI"], reverse=False)
+    attack = scale_to_stars(row["Off_raw_norm"], base_agg["Off_raw_norm"], reverse=False)
+    defense = scale_to_stars(row["Def_raw_norm"], base_agg["Def_raw_norm"], reverse=False)
+    control = scale_to_stars(row["Ctrl_raw_norm"], base_agg["Ctrl_raw_norm"], reverse=False)
+
+    return {
+        "overall": overall,
+        "attack": attack,
+        "defense": defense,
+        "control": control,
+        "source": source,
+        "prev_season": prev_season,
+    }
+
+
+def _normalize_team_name(name: str) -> str:
+    """Remove non-alphanumeric characters and lowercase for matching."""
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+@lru_cache(maxsize=1)
+def _logo_lookup() -> dict:
+    """Build a mapping of normalized team name -> logo path."""
+    mapping = {}
+    if LOGO_DIR.exists():
+        for file in LOGO_DIR.glob("*.png"):
+            mapping[_normalize_team_name(file.stem)] = str(file)
+    return mapping
+
+
+def to_base64(path: str) -> str:
+    """Return file contents encoded as base64."""
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+def get_logo_path(team: str):
+    """
+    Try to load a logo from the Logo directory, matching even if the filename
+    uses spaces, apostrophes, or other punctuation.
+    """
+    if not team:
+        return None
+
+    # Exact filename match first (e.g., "Man City.png")
+    direct_path = LOGO_DIR / f"{team}.png"
+    if direct_path.exists():
+        return str(direct_path)
+
+    normalized = _normalize_team_name(team)
+    if not normalized:
+        return None
+
+    return _logo_lookup().get(normalized)
+
+
+# ---------------------------------------
+# PAGE 1 – Season & Club Setup
+# ---------------------------------------
+def page_setup(df: pd.DataFrame):
+    st.title("⚽ Match Watchability – Season & Club Setup")
+    st.info("This is the master filter page. Select your season and clubs here. These filters will be applied across all other pages.")
+
+    seasons = get_seasons(df)
+    if not seasons:
+        st.error("No seasons found in dataset.")
+        return
+
+    # Initialize session state for selected_season if not exists
+    if "selected_season" not in st.session_state:
+        st.session_state.selected_season = seasons[0]
+
+    # Select season
+    default_season_idx = seasons.index(st.session_state.selected_season) if st.session_state.selected_season in seasons else 0
+    selected_season = st.selectbox(
+        "Select season", seasons, index=default_season_idx, key="season_select"
+    )
+
+    # Update session state only if changed
+    if st.session_state.selected_season != selected_season:
+        st.session_state.selected_season = selected_season
+        # Reset gameweek when season changes
+        if "selected_gameweek" in st.session_state:
+            del st.session_state.selected_gameweek
+        # Reset selected match when season changes
+        if "selected_match" in st.session_state:
+            del st.session_state.selected_match
+
+    teams = get_teams_for_season(df, selected_season)
+    st.write(f"Teams in {selected_season}: {len(teams)}")
+
+    # Initialize fav_clubs in session state if not exists
+    if "fav_clubs" not in st.session_state:
+        st.session_state.fav_clubs = []
+
+    # Multi-select favourite clubs (optional)
+    fav_clubs = st.multiselect(
+        "Select your favourite clubs (optional – for filtering in Dashboard):",
+        options=teams,
+        default=st.session_state.fav_clubs if all(club in teams for club in st.session_state.fav_clubs) else [],
+        key="fav_clubs_select",
+    )
+    st.session_state.fav_clubs = fav_clubs
+
+    # Previous season league table
+    prev_season = get_prev_season(seasons, selected_season)
+    if prev_season:
+        prev_table = build_full_league_table(df, prev_season)
+        prev_pos_map = dict(zip(prev_table["Team"], prev_table["Pos"]))
+    else:
+        prev_table = None
+        prev_pos_map = {}
+
+    st.markdown("### Clubs overview")
+
+    rows = []
+    for team in teams:
+        ratings = compute_team_ratings(df, selected_season, team)
+        prev_pos = prev_pos_map.get(team, None)
+        rows.append({
+            "Team": team,
+            "Prev Season Pos" if prev_season else "Prev Season Pos (N/A)": prev_pos,
+            "Overall ⭐": ratings["overall"],
+            "Attack ⚽": ratings["attack"],
+            "Defense 🛡️": ratings["defense"],
+            "Control 🎮": ratings["control"],
+        })
+
+    overview_df = pd.DataFrame(rows)
+    st.dataframe(overview_df, use_container_width=True)
+
+    if prev_season:
+        st.caption(
+            f"Previous season: {prev_season}. Positions are based on full-season standings. "
+            "Ratings use global or previous-season performance."
+        )
+    else:
+        st.caption(
+            "This is the earliest season in the dataset. Ratings are based on global historical performance."
+        )
+
+    st.success(
+        "✅ Filters saved! You can now navigate to the **Match Watchability Dashboard** to see fixtures."
+    )
+
+
+# ---------------------------------------
+# PAGE 2 – Match Watchability Dashboard
+# ---------------------------------------
+def page_watchability(df: pd.DataFrame):
+    st.title("📺 Match Watchability Dashboard")
+
+    if "selected_season" not in st.session_state or st.session_state.selected_season is None:
+        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        return
+
+    season = st.session_state.selected_season
+    fav_clubs = st.session_state.get("fav_clubs", [])
+
+    df_season = df[df["Season"] == season].copy()
+    if df_season.empty:
+        st.error(f"No data for season {season}.")
+        return
+
+    min_week = int(df_season["season_week"].min())
+    max_week = int(df_season["season_week"].max())
+
+    # Initialize selected_gameweek in session state if not exists
+    if "selected_gameweek" not in st.session_state:
+        st.session_state.selected_gameweek = min_week
+
+    # Initialize view_mode in session state if not exists
+    if "view_mode" not in st.session_state:
+        st.session_state.view_mode = "All fixtures"
+
+    col_top1, col_top2 = st.columns(2)
+    with col_top1:
+        # Clamp current week into available range
+        if st.session_state.selected_gameweek < min_week:
+            st.session_state.selected_gameweek = min_week
+        if st.session_state.selected_gameweek > max_week:
+            st.session_state.selected_gameweek = max_week
+
+        st.markdown("##### Gameweek")
+        controls = st.columns([1.5, 2, 1.5])
+        prev_disabled = st.session_state.selected_gameweek <= min_week
+        next_disabled = st.session_state.selected_gameweek >= max_week
+
+        with controls[0]:
+            st.write("")
+            prev_clicked = st.button("◀ ", key="gw_minus", use_container_width=True, type="secondary", disabled=prev_disabled)
+
+        with controls[2]:
+            st.write("")
+            next_clicked = st.button(" ▶", key="gw_plus", use_container_width=True, type="secondary", disabled=next_disabled)
+
+        if prev_clicked:
+            st.session_state.selected_gameweek = max(min_week, st.session_state.selected_gameweek - 1)
+        if next_clicked:
+            st.session_state.selected_gameweek = min(max_week, st.session_state.selected_gameweek + 1)
+
+        current_week = st.session_state.selected_gameweek
+
+        with controls[1]:
+            st.markdown(
+                f"<div style='text-align:center;font-size:2.5rem;font-weight:700;'>"
+                f"GW {current_week}</div>",
+                unsafe_allow_html=True,
+            )
+
+        gw = current_week
+    with col_top2:
+        mode = st.radio(
+            "Which fixtures do you want to see?",
+            ["All fixtures", "Favourite clubs only"],
+            index=0 if st.session_state.view_mode == "All fixtures" else 1,
+            horizontal=True,
+        )
+        # Update session state
+        st.session_state.view_mode = mode
+
+    week_df = df_season[df_season["season_week"] == gw]
+    home_rows = week_df[week_df["is_home"] == 1].copy()
+
+    if mode == "Favourite clubs only" and fav_clubs:
+        # Keep matches where home OR away is in favourite clubs
+        mask = home_rows["Team"].isin(fav_clubs) | home_rows["Opponent"].isin(fav_clubs)
+        home_rows = home_rows[mask]
+
+    if home_rows.empty:
+        st.info("No matches found for this filter (maybe no favourite clubs this week).")
+        return
+
+    st.markdown(f"### Gameweek {gw} fixtures – {season}")
+
+    # Build match summaries with new worthiness scoring
+    match_summaries = []
+    for idx, row_home in home_rows.iterrows():
+        home_row, away_row = get_match_pair(df_season, row_home)
+        if away_row is None:
+            continue
+
+        home_proba = float(home_row["PredProba"])
+        away_proba = float(away_row["PredProba"])
+        home_label = int(home_row["PredLabel"])
+        away_label = int(away_row["PredLabel"])
+
+        # Get league positions for stakes calculation
+        home_team = home_row["Team"]
+        away_team = home_row["Opponent"]
+        home_position = get_team_position_at_week(df, season, home_team, gw)
+        away_position = get_team_position_at_week(df, season, away_team, gw)
+
+        # Calculate match worthiness score
+        worthiness = calculate_match_worthiness(
+            team_a_prob=home_proba,
+            team_b_prob=away_proba,
+            team_a_position=home_position,
+            team_b_position=away_position,
+            matchweek=gw
+        )
+
+        # Get stakes context
+        stakes_context = get_stakes_context(home_position, away_position)
+
+        match_summaries.append({
+            "home_index": int(home_row.name),
+            "away_index": int(away_row.name),
+            "MatchDate": home_row["MatchDate"],
+            "Home": home_row["Team"],
+            "Away": home_row["Opponent"],
+            "HomeProba": home_proba,
+            "AwayProba": away_proba,
+            "HomeLabel": home_label,
+            "AwayLabel": away_label,
+            "HomePosition": home_position,
+            "AwayPosition": away_position,
+            "Watchability": worthiness["recommendation"],  # New system
+            "WorthinessScore": worthiness["total_score"],
+            "QualityScore": worthiness["quality_score"],
+            "CompetitivenessScore": worthiness["competitiveness_score"],
+            "UnpredictabilityScore": worthiness["unpredictability_score"],
+            "StakesScore": worthiness["stakes_score"],
+            "Priority": worthiness["priority"],
+            "StakesContext": stakes_context,
+            "Breakdown": worthiness["breakdown"],
+        })
+
+    if not match_summaries:
+        st.info("No valid home/away pairs found for this gameweek.")
+        return
+
+    # Helper function to get color for score
+    def get_score_color(score):
+        if score >= 5.0:
+            return "#28a745"  # Green - Worth Watching
+        elif score >= 3.0:
+            return "#ffa500"  # Orange - Maybe
+        else:
+            return "#dc3545"  # Red - Skip
+
+    # Show summary table with new scoring
+    summary_df = pd.DataFrame([
+        {
+            "Match": f"{m['Home']} vs {m['Away']}",
+            "Date": m["MatchDate"].date(),
+            "Score": f"{m['WorthinessScore']:.1f}/10",
+            "Recommendation": m["Watchability"],
+            "Stakes": m["StakesContext"],
+            "Home (Pos)": f"{m['Home']} ({m['HomePosition'] if m['HomePosition'] else '-'})",
+            "Away (Pos)": f"{m['Away']} ({m['AwayPosition'] if m['AwayPosition'] else '-'})",
+        }
+        for m in match_summaries
+    ])
+
+    # Display table
+    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+    # Add score distribution summary
+    st.markdown("#### Gameweek Summary")
+    col1, col2, col3 = st.columns(3)
+
+    worth_watching = sum(1 for m in match_summaries if m["Priority"] == "WORTH")
+    maybe = sum(1 for m in match_summaries if m["Priority"] == "MAYBE")
+    skip = sum(1 for m in match_summaries if m["Priority"] == "SKIP")
+    
+    col1.metric("👍 Worth Watching", worth_watching)
+    col2.metric("🤔 Maybe", maybe)
+    col3.metric("⏭️ Skip", skip)
+
+    # Select a match for detailed view
+    options = [f"{m['Home']} vs {m['Away']}" for m in match_summaries]
+    selected_match = st.selectbox("Select a match to inspect in detail:", options)
+    sel_idx = options.index(selected_match)
+    sel = match_summaries[sel_idx]
+
+    # Detailed view
+    home_row = df_season.loc[sel["home_index"]]
+    away_row = df_season.loc[sel["away_index"]]
+
+    home_disp = to_display_series(home_row)
+    away_disp = to_display_series(away_row)
+
+    st.markdown("---")
+    st.markdown(
+        f"### Detailed view: **{sel['Home']}** vs **{sel['Away']}** "
+        f"({sel['MatchDate'].date()}, GW {gw})"
+    )
+
+    # Worthiness Score Breakdown
+    score_color = get_score_color(sel["WorthinessScore"])
+    st.markdown(f"#### Match Worthiness Score: <span style='color:{score_color}; font-size:2em; font-weight:bold;'>{sel['WorthinessScore']:.1f}/10</span>", unsafe_allow_html=True)
+    st.markdown(f"**Recommendation:** {sel['Watchability']} (Priority: {sel['Priority']})")
+    st.markdown(f"**Stakes Context:** {sel['StakesContext']}")
+
+    # Score breakdown with progress bars
+    st.markdown("##### Score Components")
+    col_q, col_c, col_u, col_s = st.columns(4)
+
+    with col_q:
+        st.write("**Quality** (40%)")
+        st.progress(sel["QualityScore"] / 4.0)
+        st.caption(f"{sel['QualityScore']:.2f} / 4.0")
+
+    with col_c:
+        st.write("**Competitiveness** (25%)")
+        st.progress(sel["CompetitivenessScore"] / 2.5)
+        st.caption(f"{sel['CompetitivenessScore']:.2f} / 2.5")
+
+    with col_u:
+        st.write("**Unpredictability** (15%)")
+        st.progress(sel["UnpredictabilityScore"] / 1.5)
+        st.caption(f"{sel['UnpredictabilityScore']:.2f} / 1.5")
+
+    with col_s:
+        st.write("**Stakes** (20%)")
+        st.progress(sel["StakesScore"] / 2.0)
+        st.caption(f"{sel['StakesScore']:.2f} / 2.0")
+
+    st.markdown("---")
+    st.markdown("#### Team Form Analysis")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        pos_text = f" (Position: {sel['HomePosition']})" if sel['HomePosition'] else ""
+        st.markdown(f"**{sel['Home']}{pos_text}**")
+        arrow = "⬆️ On-form" if sel["HomeLabel"] == 1 else "⬇️ Off-form"
+        st.metric("Predicted form", arrow, f"{sel['HomeProba']*100:.1f}%")
+        st.write(f"Last 5 results: {last5_record_string(df, season, sel['Home'], sel['MatchDate'])}")
+        st.write(f"H2H win rate vs {sel['Away']}: {home_disp['h2h_win_rate']*100:.1f}%")
+
+    with c2:
+        pos_text = f" (Position: {sel['AwayPosition']})" if sel['AwayPosition'] else ""
+        st.markdown(f"**{sel['Away']}{pos_text}**")
+        arrow_o = "⬆️ On-form" if sel["AwayLabel"] == 1 else "⬇️ Off-form"
+        st.metric("Predicted form", arrow_o, f"{sel['AwayProba']*100:.1f}%")
+        st.write(f"Last 5 results: {last5_record_string(df, season, sel['Away'], sel['MatchDate'])}")
+        st.write(f"H2H (from {sel['Away']} perspective): {away_disp['h2h_win_rate']*100:.1f}%")
+
+    st.markdown("#### Key history stats (last 5 & season averages)")
+
+    stats_cols_last5 = [
+        "avg_goals_scored_last5", "avg_goals_conceded_last5",
+        "avg_shots_last5", "avg_shots_on_target_last5",
+        "avg_shot_conversion_rate_last5", "avg_shot_accuracy_rate_last5",
+    ]
+    stats_cols_season = [
+        "season_avg_goals_scored", "season_avg_goals_conceded",
+        "avg_shots_season", "avg_shots_on_target_season",
+        "avg_shot_conversion_rate_season", "avg_shot_accuracy_rate_season",
+    ]
+
+    team_stats = {col: home_disp[col] for col in stats_cols_last5 + stats_cols_season}
+    opp_stats = {col: away_disp[col] for col in stats_cols_last5 + stats_cols_season}
+
+    col_team, col_opp = st.columns(2)
+    with col_team:
+        st.write(f"**{sel['Home']}**")
+        st.table(pd.DataFrame(team_stats, index=["Value"]).T)
+    with col_opp:
+        st.write(f"**{sel['Away']}**")
+        st.table(pd.DataFrame(opp_stats, index=["Value"]).T)
+
+    # Button to navigate to Match Result View
+    st.markdown("---")
+    if st.button("📋 View Full Match Analysis in Match Result Review", type="primary"):
+        # Store the selected match details in session state
+        st.session_state.selected_match = {
+            "home_index": sel["home_index"],
+            "away_index": sel["away_index"],
+            "Home": sel["Home"],
+            "Away": sel["Away"],
+            "MatchDate": sel["MatchDate"],
+            "season": season,
+            "gameweek": gw,
+        }
+        # Activate Match Result Review mode
+        st.session_state.match_result_mode = True
+        st.rerun()
+
+    st.caption(
+        "Fans can use this page to quickly scan all fixtures in a gameweek and identify "
+        "which matches are likely to be high-quality clashes, one-sided shows, or low-excitement games."
+    )
+
+
+# ---------------------------------------
+# PAGE 3 – Match Result Review
+# ---------------------------------------
+def page_match_result(df: pd.DataFrame):
+    st.title("📋 Match Result Review")
+
+    if "selected_season" not in st.session_state or st.session_state.selected_season is None:
+        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        return
+
+    # Check if a match has been selected from Dashboard
+    if "selected_match" not in st.session_state or st.session_state.selected_match is None:
+        st.info("Please select a match from the **Match Watchability Dashboard** first.")
+        st.markdown("### How to use this page:")
+        st.markdown("1. Go to **Match Watchability Dashboard**")
+        st.markdown("2. Select a gameweek and view fixtures")
+        st.markdown("3. Choose a match and click the button to view full analysis here")
+
+        # Add back button to return to dashboard
+        if st.button("⬅️ Back to Dashboard", type="primary"):
+            st.session_state.match_result_mode = False
+            st.session_state.current_page = "2. Match Watchability Dashboard"
+            st.rerun()
+        return
+    
+    # Get selected match from session state
+    sel = st.session_state.selected_match
+    season = sel["season"]
+    gw = sel["gameweek"]
+    
+    df_season = df[df["Season"] == season].copy()
+    if df_season.empty:
+        st.error(f"No data for season {season}.")
+        return
+
+    # Load the match data
+    home_row = df_season.loc[sel["home_index"]]
+    away_row = df_season.loc[sel["away_index"]]
+
+    home_disp = to_display_series(home_row)
+    away_disp = to_display_series(away_row)
+
+    # Show back button at the top
+    if st.button("⬅️ Back to Dashboard", type="secondary"):
+        # Deactivate Match Result Review mode
+        st.session_state.match_result_mode = False
+        # Switch back to Match Watchability Dashboard
+        st.session_state.current_page = "2. Match Watchability Dashboard"
+        st.rerun()
+
+    st.markdown("---")
+
+    # Predicted vs actual form labels
+    home_pred_label = int(home_row["PredLabel"])
+    away_pred_label = int(away_row["PredLabel"])
+    home_pred_proba = float(home_row["PredProba"])
+    away_pred_proba = float(away_row["PredProba"])
+
+    home_actual = int(home_row["FormLabel"])
+    away_actual = int(away_row["FormLabel"])
+
+    st.markdown(
+        f"### {sel['Home']} vs {sel['Away']} "
+        f"({sel['MatchDate'].date()}, GW {gw})"
+    )
+
+    home_goals = int(home_disp["GoalsFor"])
+    away_goals = int(home_disp["GoalsAgainst"])
+
+    st.markdown("#### Final Score")
+    score_home_col, score_mid_col, score_away_col = st.columns([3, 2, 3])
+
+    home_logo = get_logo_path(sel["Home"])
+    away_logo = get_logo_path(sel["Away"])
+
+    def render_team_block(team_name, logo_path):
+        if logo_path:
+            st.markdown(
+                f"<div style='text-align:center;'>"
+                f"<img src='data:image/png;base64,{to_base64(logo_path)}' "
+                f"style='width:80px;height:auto;'/></div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            f"<div style='text-align:center;font-size:2.5rem;font-weight:700;'>"
+            f"{team_name}</div>",
+            unsafe_allow_html=True,
+        )
+
+    with score_home_col:
+        render_team_block(sel["Home"], home_logo)
+    with score_mid_col:
+        st.markdown(
+            f"<div style='text-align:center;padding:0.25rem 0;"
+            f"font-size:2.5rem;font-weight:700;'>"
+            f"{home_goals} - {away_goals}</div>",
+            unsafe_allow_html=True,
+        )
+    with score_away_col:
+        render_team_block(sel["Away"], away_logo)
+
+    st.markdown("---")
+    st.markdown("#### Team Form Check (Predicted vs Actual)")
+
+    team_form_rows = [
+        {
+            "team": sel["Home"],
+            "pred_label": home_pred_label,
+            "pred_proba": home_pred_proba,
+            "actual": home_actual,
+            "last5": last5_record_string(df, season, sel["Home"], sel["MatchDate"]),
+            "h2h": f"{home_disp['h2h_win_rate']*100:.1f}%",
+        },
+        {
+            "team": sel["Away"],
+            "pred_label": away_pred_label,
+            "pred_proba": away_pred_proba,
+            "actual": away_actual,
+            "last5": last5_record_string(df, season, sel["Away"], sel["MatchDate"]),
+            "h2h": f"{away_disp['h2h_win_rate']*100:.1f}%",
+        },
+    ]
+
+    col_team_home, col_team_away = st.columns(2)
+    for col, row in zip([col_team_home, col_team_away], team_form_rows):
+        predicted_status = "On-form" if row["pred_label"] == 1 else "Off-form"
+        actual_status = "On-form" if row["actual"] == 1 else "Off-form"
+        correct = row["pred_label"] == row["actual"]
+        with col:
+            st.markdown(f"**{row['team']}**")
+            st.metric(
+                "Predicted Form",
+                predicted_status,
+                f"{row['pred_proba']*100:.1f}% confidence",
+            )
+            st.metric("Actual Form", actual_status)
+            if correct:
+                st.success("Prediction matched the actual form.")
+            else:
+                st.error("Prediction missed the actual form.")
+            st.write(f"Last 5 results: {row['last5']}")
+            st.write(f"H2H win rate vs opponent: {row['h2h']}")
+
+    match_accuracy = sum(1 for r in team_form_rows if r["pred_label"] == r["actual"])
+    match_accuracy_pct = match_accuracy / len(team_form_rows) * 100
+    st.metric("Form prediction accuracy for this match", f"{match_accuracy_pct:.0f}%", f"{match_accuracy}/2 correct")
+
+    form_comparison_df = pd.DataFrame([
+        {
+            "Team": row["team"],
+            "Predicted": "On-form" if row["pred_label"] == 1 else "Off-form",
+            "Actual": "On-form" if row["actual"] == 1 else "Off-form",
+            "Confidence": f"{row['pred_proba']*100:.1f}%",
+            "Correct?": "Yes" if row["pred_label"] == row["actual"] else "No",
+        }
+        for row in team_form_rows
+    ])
+    st.dataframe(form_comparison_df, use_container_width=True, hide_index=True)
+
+    st.markdown("#### Raw Match Stats")
+
+    team_stats = {
+        "Goals": home_disp["GoalsFor"],
+        "Goals Conceded": home_disp["GoalsAgainst"],
+        "Shots": home_disp["ShotsFor"],
+        "Shots on Target": home_disp["ShotsOnTargetFor"],
+        "Corners": home_disp["CornersFor"],
+        "Fouls": home_disp["FoulsFor"],
+        "Yellow Cards": home_disp["YellowCards"],
+        "Red Cards": home_disp["RedCards"],
+    }
+
+    opp_stats = {
+        "Goals": away_disp["GoalsFor"],
+        "Goals Conceded": away_disp["GoalsAgainst"],
+        "Shots": away_disp["ShotsFor"],
+        "Shots on Target": away_disp["ShotsOnTargetFor"],
+        "Corners": away_disp["CornersFor"],
+        "Fouls": away_disp["FoulsFor"],
+        "Yellow Cards": away_disp["YellowCards"],
+        "Red Cards": away_disp["RedCards"],
+    }
+
+    c_stats1, c_stats2 = st.columns(2)
+    with c_stats1:
+        st.write(f"**{sel['Home']}**")
+        st.table(pd.DataFrame(team_stats, index=["Value"]).T)
+    with c_stats2:
+        st.write(f"**{sel['Away']}**")
+        st.table(pd.DataFrame(opp_stats, index=["Value"]).T)
+
+    st.caption(
+        "Use this review to validate the form model: compare predicted vs actual form tags and inspect the raw match stats for deeper context."
+    )
+
+
+# ---------------------------------------
+# PAGE 4 – Club Watchability Stats
+# ---------------------------------------
+def page_club_stats(df: pd.DataFrame):
+    st.title("📈 Club Watchability Stats")
+
+    if "selected_season" not in st.session_state or st.session_state.selected_season is None:
+        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        return
+
+    season = st.session_state.selected_season
+    fav_clubs = st.session_state.get("fav_clubs", [])
+    view_mode = st.session_state.get("view_mode", "All fixtures")
+    selected_gameweek = st.session_state.get("selected_gameweek", None)
+
+    df_season = df[df["Season"] == season].copy()
+    if df_season.empty:
+        st.error(f"No data for season {season}.")
+        return
+
+    # Filter by gameweek if selected in Dashboard (show completed matches only: week-1)
+    display_gameweek = None
+    if selected_gameweek is not None:
+        # Show stats for completed matches only (up to week before selected)
+        display_gameweek = max(0, selected_gameweek - 1)
+        if display_gameweek > 0:
+            df_season = df_season[df_season["season_week"] <= display_gameweek].copy()
+            st.info(f"Showing stats up to Week {display_gameweek} (completed matches before Gameweek {selected_gameweek})")
+        else:
+            # No completed matches yet
+            df_season = df_season[df_season["season_week"] < 1].copy()  # Empty dataset
+            st.info(f"Gameweek {selected_gameweek} selected in Dashboard. No matches completed yet.")
+
+    # Get teams based on Dashboard preferences
+    teams = get_teams_for_season(df, season)
+
+    # Filter teams based on view mode from Dashboard
+    if view_mode == "Favourite clubs only" and fav_clubs:
+        available_teams = [t for t in teams if t in fav_clubs]
+        if not available_teams:
+            st.warning("No favourite clubs selected. Showing all teams.")
+            available_teams = teams
+        else:
+            st.info(f"Showing stats for favourite clubs only (as selected in Dashboard)")
+    else:
+        available_teams = teams
+
+    club = st.selectbox("Select club:", available_teams, index=0)
+    club_df = df_season[df_season["Team"] == club].copy()
+    if club_df.empty:
+        st.info("No data for this club in the selected season/gameweek range.")
+        return
+
+    # Display gameweek info based on completed matches
+    if display_gameweek is not None:
+        if display_gameweek > 0:
+            gameweek_info = f" (up to Week {display_gameweek})"
+        else:
+            gameweek_info = " (no matches played yet)"
+    else:
+        gameweek_info = ""
+    st.markdown(f"### {club} – season summary ({season}{gameweek_info})")
+
+    # W/D/L and goals
+    result_codes = club_df["Result"].apply(result_to_code)
+    total_matches = len(club_df)
+    wins = (result_codes == "W").sum()
+    draws = (result_codes == "D").sum()
+    losses = (result_codes == "L").sum()
+    goals_for = club_df["GoalsFor"].sum()
+    goals_against = club_df["GoalsAgainst"].sum()
+    win_rate = wins / total_matches if total_matches > 0 else 0.0
+
+    avg_mpi = club_df["MPI"].mean()
+    on_form = (club_df["FormLabel"] == 1).sum()
+    off_form = (club_df["FormLabel"] == 0).sum()
+
+    # Model accuracy for this club
+    correct = (club_df["PredLabel"] == club_df["FormLabel"]).sum()
+    acc = correct / total_matches if total_matches > 0 else None
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Matches played", total_matches)
+    c2.metric("W / D / L", f"{wins} / {draws} / {losses}")
+    c3.metric("Season win rate", f"{win_rate*100:.1f}%")
+
+    c4, c5, c6 = st.columns(3)
+    c4.metric("Goals For / Against", f"{goals_for} / {goals_against}")
+    c5.metric("Average MPI", f"{avg_mpi:.3f}")
+    c6.metric("On-form vs Off-form (actual)", f"{on_form} / {off_form}")
+
+    if acc is not None:
+        st.metric("Model accuracy for this club", f"{acc*100:.1f}%")
+
+    st.markdown("#### Aggregated raw match stats (this season)")
+    agg_stats = {
+        "Total Shots": club_df["ShotsFor"].sum(),
+        "Total Shots on Target": club_df["ShotsOnTargetFor"].sum(),
+        "Total Corners": club_df["CornersFor"].sum(),
+        "Total Fouls": club_df["FoulsFor"].sum(),
+        "Total Yellow Cards": club_df["YellowCards"].sum(),
+        "Total Red Cards": club_df["RedCards"].sum(),
+    }
+    st.table(pd.DataFrame(agg_stats, index=["Value"]).T)
+
+    st.markdown("#### Match-by-match details")
+    show_cols = [
+        "MatchDate", "season_week", "Opponent",
+        "GoalsFor", "GoalsAgainst", "Result",
+        "PredProba", "PredLabel", "FormLabel", "MPI",
+        "ShotsFor", "ShotsOnTargetFor",
+        "CornersFor", "FoulsFor",
+        "YellowCards", "RedCards",
+    ]
+    available_cols = [c for c in show_cols if c in club_df.columns]
+    tmp = club_df[available_cols].copy()
+    tmp = tmp.sort_values("MatchDate")
+    st.dataframe(tmp, use_container_width=True)
+
+    st.caption(
+        "This view summarizes how entertaining this club's matches are "
+        "(goals, shots, form) and how reliable the watchability model is for this club. "
+        "Stats are filtered based on your Dashboard preferences (season, gameweek, and view mode)."
+    )
+
+
+# ---------------------------------------
+# PAGE 5 – League Table Context
+# ---------------------------------------
+def page_league_table(df: pd.DataFrame):
+    st.title("🏆 League Table Context")
+
+    if "selected_season" not in st.session_state or st.session_state.selected_season is None:
+        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        return
+
+    # Use selected season from session state
+    season = st.session_state.selected_season
+    selected_gameweek = st.session_state.get("selected_gameweek", None)
+
+    df_season = df[df["Season"] == season].copy()
+    if df_season.empty:
+        st.error(f"No data for season {season}.")
+        return
+
+    # Calculate the gameweek to display (completed matches only)
+    # If gameweek 1 is selected, show week 0 (no matches played yet)
+    if selected_gameweek is not None:
+        display_gw = max(0, selected_gameweek - 1)
+    else:
+        # If no gameweek selected, show full season
+        max_week = int(df_season["season_week"].max())
+        display_gw = max_week
+
+    st.info(f"Showing league table for season: **{season}**")
+    if selected_gameweek is not None:
+        st.info(f"Gameweek **{selected_gameweek}** selected in Dashboard. Showing standings after **Week {display_gw}** (completed matches only).")
+
+    if display_gw == 0:
+        st.markdown(f"### League Standings - {season} (No matches played yet)")
+        st.info("No matches have been completed yet. The league table will be available after Week 1 matches are played.")
+    else:
+        st.markdown(f"### League Standings - {season} (after Week {display_gw})")
+        table = build_league_table_up_to_week(df, season, display_gw)
+        if table.empty:
+            st.info("No league data available.")
+        else:
+            st.dataframe(table, use_container_width=True)
+
+    st.caption(
+        "This table shows standings based on completed matches only. "
+        "The season is from **Season & Club Setup**, and the gameweek follows your **Dashboard** selection."
+    )
+
+
+# ---------------------------------------
+# MAIN
+# ---------------------------------------
+def main():
+    st.set_page_config(
+        page_title="EPL Match Watchability Dashboard",
+        layout="wide",
+    )
+
+    df = load_data_with_predictions(DATA_PATH, MODEL_PATH)
+
+    # Initialize current_page in session state if not exists
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "1. Season & Club Setup"
+
+    # Initialize match_result_mode flag
+    if "match_result_mode" not in st.session_state:
+        st.session_state.match_result_mode = False
+
+    # Check if we're in Match Result Review mode
+    in_match_result_mode = st.session_state.match_result_mode
+
+    # Only show sidebar navigation when NOT in Match Result Review mode
+    if not in_match_result_mode:
+        st.sidebar.title("Navigation")
+
+        # Use session state to control the selected page
+        page_options = [
+            "1. Season & Club Setup",
+            "2. Match Watchability Dashboard",
+            "4. Club Watchability Stats",
+            "5. League Table Context",
+        ]
+
+        # Get the index of current page
+        current_index = page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0
+
+        page = st.sidebar.radio(
+            "Go to",
+            page_options,
+            index=current_index,
+        )
+
+        # Update current_page if user manually selects from sidebar
+        if page != st.session_state.current_page:
+            st.session_state.current_page = page
+
+        if page.startswith("1."):
+            page_setup(df)
+        elif page.startswith("2."):
+            page_watchability(df)
+        elif page.startswith("4."):
+            page_club_stats(df)
+        elif page.startswith("5."):
+            page_league_table(df)
+    else:
+        # In Match Result Review mode - only show this page
+        page_match_result(df)
+
+
+if __name__ == "__main__":
+    main()

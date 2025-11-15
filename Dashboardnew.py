@@ -681,7 +681,7 @@ def get_logo_path(team: str):
 # ---------------------------------------
 def page_setup(df: pd.DataFrame):
     st.title("⚽ Match Watchability – Season & Club Setup")
-    st.info("This is the master filter page. Select your season and clubs here. These filters will be applied across all other pages.")
+    st.info("This is the master filter page. Select your season and clubs here. These filters will be applied across all dashboard pages.")
 
     seasons = get_seasons(df)
     if not seasons:
@@ -733,7 +733,7 @@ def page_setup(df: pd.DataFrame):
         prev_table = None
         prev_pos_map = {}
 
-    st.markdown("### Clubs overview")
+    st.markdown("### Clubs Overview")
 
     rows = []
     for team in teams:
@@ -754,15 +754,15 @@ def page_setup(df: pd.DataFrame):
     if prev_season:
         st.caption(
             f"Previous season: {prev_season}. Positions are based on full-season standings. "
-            "Ratings use global or previous-season performance."
+            "Ratings are calculated using global or previous season performance data."
         )
     else:
         st.caption(
-            "This is the earliest season in the dataset. Ratings are based on global historical performance."
+            "This is the earliest season in the dataset. Ratings are calculated using global historical performance data."
         )
 
     st.success(
-        "✅ Filters saved! You can now navigate to the **Match Watchability Dashboard** to see fixtures."
+        "✅ Filters saved! You can now navigate to the **Match Watchability Dashboard** to view fixtures."
     )
 
 
@@ -850,7 +850,7 @@ def page_watchability(df: pd.DataFrame):
         home_rows = home_rows[mask]
 
     if home_rows.empty:
-        st.info("No matches found for this filter (maybe no favourite clubs this week).")
+        st.info("No matches found for this filter (possibly no favourite clubs playing this week).")
         return
 
     st.markdown(f"### Gameweek {gw} fixtures – {season}")
@@ -909,7 +909,7 @@ def page_watchability(df: pd.DataFrame):
         })
 
     if not match_summaries:
-        st.info("No valid home/away pairs found for this gameweek.")
+        st.info("No valid home/away match pairs found for this gameweek.")
         return
 
     # Helper function to get color for score
@@ -1009,7 +1009,7 @@ def page_watchability(df: pd.DataFrame):
         arrow = "⬆️ On-form" if sel["HomeLabel"] == 1 else "⬇️ Off-form"
         st.metric("Predicted form", arrow, f"{sel['HomeProba']*100:.2f}%")
         st.write(f"Last 5 results: {last5_record_string(df, season, sel['Home'], sel['MatchDate'])}")
-        st.write(f"H2H win rate vs {sel['Away']}: {home_disp['h2h_win_rate']*100:.2f}%")
+        st.write(f"Head-to-Head win rate vs {sel['Away']}: {home_disp['h2h_win_rate']*100:.2f}%")
 
     with c2:
         pos_text = f" (Position: {sel['AwayPosition']})" if sel['AwayPosition'] else ""
@@ -1017,9 +1017,9 @@ def page_watchability(df: pd.DataFrame):
         arrow_o = "⬆️ On-form" if sel["AwayLabel"] == 1 else "⬇️ Off-form"
         st.metric("Predicted form", arrow_o, f"{sel['AwayProba']*100:.2f}%")
         st.write(f"Last 5 results: {last5_record_string(df, season, sel['Away'], sel['MatchDate'])}")
-        st.write(f"H2H (from {sel['Away']} perspective): {away_disp['h2h_win_rate']*100:.2f}%")
+        st.write(f"Head-to-Head win rate (from {sel['Away']} perspective): {away_disp['h2h_win_rate']*100:.2f}%")
 
-    st.markdown("#### Key history stats (last 5 & season averages)")
+    st.markdown("#### Key Historical Stats (Last 5 Matches & Season Averages)")
 
     stats_cols_last5 = [
         ("avg_goals_scored_last5", "Avg goals scored"),
@@ -1092,8 +1092,8 @@ def page_watchability(df: pd.DataFrame):
         st.rerun()
 
     st.caption(
-        "Fans can use this page to quickly scan all fixtures in a gameweek and identify "
-        "which matches are likely to be high-quality clashes, one-sided shows, or low-excitement games."
+        "Use this page to quickly scan all fixtures in a gameweek and identify "
+        "which matches are likely to be high-quality clashes, one-sided contests, or low-excitement games."
     )
 
 
@@ -1110,10 +1110,10 @@ def page_match_result(df: pd.DataFrame):
     # Check if a match has been selected from Dashboard
     if "selected_match" not in st.session_state or st.session_state.selected_match is None:
         st.info("Please select a match from the **Match Watchability Dashboard** first.")
-        st.markdown("### How to use this page:")
-        st.markdown("1. Go to **Match Watchability Dashboard**")
+        st.markdown("### How to Use This Page:")
+        st.markdown("1. Navigate to **Match Watchability Dashboard**")
         st.markdown("2. Select a gameweek and view fixtures")
-        st.markdown("3. Choose a match and click the button to view full analysis here")
+        st.markdown("3. Choose a match and click the button to view the full analysis here")
 
         # Add back button to return to dashboard
         if st.button("⬅️ Back to Dashboard", type="primary"):
@@ -1234,11 +1234,11 @@ def page_match_result(df: pd.DataFrame):
             )
             st.metric("Actual Form", actual_status)
             if correct:
-                st.success("Prediction matched the actual form.")
+                st.success("Prediction correctly matched the actual form.")
             else:
-                st.error("Prediction missed the actual form.")
+                st.error("Prediction did not match the actual form.")
             st.write(f"Last 5 results: {row['last5']}")
-            st.write(f"H2H win rate vs opponent: {row['h2h']}")
+            st.write(f"Head-to-Head win rate vs opponent: {row['h2h']}")
 
     match_accuracy = sum(1 for r in team_form_rows if r["pred_label"] == r["actual"])
     match_accuracy_pct = match_accuracy / len(team_form_rows) * 100
@@ -1295,7 +1295,7 @@ def page_match_result(df: pd.DataFrame):
     )
 
     st.caption(
-        "Use this review to validate the form model: compare predicted vs actual form tags and inspect the raw match stats for deeper context."
+        "Use this review to validate the form prediction model by comparing predicted versus actual form labels and inspecting raw match statistics for deeper insights."
     )
 
 
@@ -1349,7 +1349,7 @@ def page_club_stats(df: pd.DataFrame):
     club = st.selectbox("Select club:", available_teams, index=0)
     club_df = df_season[df_season["Team"] == club].copy()
     if club_df.empty:
-        st.info("No data for this club in the selected season/gameweek range.")
+        st.info("No data available for this club in the selected season/gameweek range.")
         return
 
     # Display gameweek info based on completed matches
@@ -1360,7 +1360,7 @@ def page_club_stats(df: pd.DataFrame):
             gameweek_info = " (no matches played yet)"
     else:
         gameweek_info = ""
-    st.markdown(f"### {club} – season summary ({season}{gameweek_info})")
+    st.markdown(f"### {club} – Season Summary ({season}{gameweek_info})")
 
     # W/D/L and goals
     result_codes = club_df["Result"].apply(result_to_code)
@@ -1381,19 +1381,19 @@ def page_club_stats(df: pd.DataFrame):
     acc = correct / total_matches if total_matches > 0 else None
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Matches played", total_matches)
+    c1.metric("Matches Played", total_matches)
     c2.metric("W / D / L", f"{wins} / {draws} / {losses}")
-    c3.metric("Season win rate", f"{win_rate*100:.2f}%")
+    c3.metric("Season Win Rate", f"{win_rate*100:.2f}%")
 
     c4, c5, c6 = st.columns(3)
     c4.metric("Goals For / Against", f"{goals_for} / {goals_against}")
     c5.metric("Average MPI", f"{avg_mpi:.2f}")
-    c6.metric("On-form vs Off-form (actual)", f"{on_form} / {off_form}")
+    c6.metric("On-Form vs Off-Form (Actual)", f"{on_form} / {off_form}")
 
     if acc is not None:
-        st.metric("Model accuracy for this club", f"{acc*100:.2f}%")
+        st.metric("Model Prediction Accuracy for This Club", f"{acc*100:.2f}%")
 
-    st.markdown("#### Result breakdown vs predicted form")
+    st.markdown("#### Result Breakdown vs Predicted Form")
     pred_label_map = {1: "Predicted On-form", 0: "Predicted Off-form"}
     pred_vs_results = (
         club_df.assign(
@@ -1418,9 +1418,9 @@ def page_club_stats(df: pd.DataFrame):
         axis=1,
     ).round(2)
     st.dataframe(pred_vs_results, use_container_width=True)
-    st.caption("Shows actual W/D/L outcomes split by whether the model tagged this club as on-form or off-form.")
+    st.caption("Shows actual Win/Draw/Loss outcomes categorized by whether the model predicted this club as on-form or off-form.")
 
-    st.markdown("#### Aggregated raw match stats (this season)")
+    st.markdown("#### Aggregated Match Statistics (This Season)")
     agg_stats = {
         "Total Shots": club_df["ShotsFor"].sum(),
         "Total Shots on Target": club_df["ShotsOnTargetFor"].sum(),
@@ -1431,7 +1431,7 @@ def page_club_stats(df: pd.DataFrame):
     }
     st.table(pd.DataFrame(agg_stats, index=["Value"]).T)
 
-    st.markdown("#### Match-by-match details")
+    st.markdown("#### Match-by-Match Details")
     show_cols = [
         "MatchDate", "season_week", "Opponent",
         "GoalsFor", "GoalsAgainst", "Result",
@@ -1446,9 +1446,9 @@ def page_club_stats(df: pd.DataFrame):
     st.dataframe(tmp, use_container_width=True)
 
     st.caption(
-        "This view summarizes how entertaining this club's matches are "
-        "(goals, shots, form) and how reliable the watchability model is for this club. "
-        "Stats are filtered based on your Dashboard preferences (season, gameweek, and view mode)."
+        "This view summarizes the entertainment value of this club's matches "
+        "(based on goals, shots, and form) and evaluates the watchability model's reliability for this club. "
+        "Statistics are filtered based on your Dashboard preferences (season, gameweek, and view mode)."
     )
 
 
@@ -1485,20 +1485,20 @@ def page_league_table(df: pd.DataFrame):
         st.info(f"Gameweek **{selected_gameweek}** selected in Dashboard. Showing standings after **Week {display_gw}** (completed matches only).")
 
     if display_gw == 0:
-        st.markdown(f"### League Standings - {season} (No matches played yet)")
-        st.info("No matches have been completed yet. The league table will be available after Week 1 matches are played.")
+        st.markdown(f"### League Standings - {season} (No Matches Played Yet)")
+        st.info("No matches have been completed yet. The league table will be available after Gameweek 1 matches are played.")
     else:
-        st.markdown(f"### League Standings - {season} (after Week {display_gw})")
+        st.markdown(f"### League Standings - {season} (After Week {display_gw})")
         table = build_league_table_up_to_week(df, season, display_gw)
         if table.empty:
-            st.info("No league data available.")
+            st.info("No league data is available.")
         else:
             st.dataframe(table, use_container_width=True)
             trend_df = build_position_trends(df, season, display_gw)
             if trend_df.empty:
-                st.info("Not enough data to plot league position changes yet.")
+                st.info("Insufficient data available to plot league position changes at this time.")
             else:
-                st.markdown("#### League position changes over time")
+                st.markdown("#### League Position Changes Over Time")
                 teams_available = sorted(trend_df["Team"].unique())
                 fav_defaults = [
                     club for club in st.session_state.get("fav_clubs", [])
@@ -1543,8 +1543,8 @@ def page_league_table(df: pd.DataFrame):
                     st.altair_chart(chart, use_container_width=True)
 
     st.caption(
-        "This table shows standings based on completed matches only. "
-        "The season is from **Season & Club Setup**, and the gameweek follows your **Dashboard** selection."
+        "This table displays standings based on completed matches only. "
+        "The season is selected from **Season & Club Setup**, and the gameweek follows your **Dashboard** selection."
     )
 
 

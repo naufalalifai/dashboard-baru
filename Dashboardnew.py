@@ -1163,7 +1163,7 @@ def page_watchability(df: pd.DataFrame):
 
     # Worthiness Score Breakdown
     score_color = get_score_color(sel["WorthinessScore"])
-    st.markdown(f"#### Match Worthiness Score: <span style='color:{score_color}; font-size:2em; font-weight:bold;'>{sel['WorthinessScore']:.2f}/10</span>", unsafe_allow_html=True)
+    st.markdown(f"#### Match Watchability Score: <span style='color:{score_color}; font-size:2em; font-weight:bold;'>{sel['WorthinessScore']:.2f}/10</span>", unsafe_allow_html=True)
     st.markdown(f"**Recommendation:** {sel['Watchability']} (Priority: {sel['Priority']})")
     st.markdown(f"**Stakes Context:** {sel['StakesContext']}")
 
@@ -1321,7 +1321,7 @@ def page_match_result(df: pd.DataFrame):
         """)
 
         # Add back button to return to dashboard
-        if st.button("⬅️ Back to Dashboard", type="primary"):
+        if st.button("⬅️ Back to Match Watchability", type="primary"):
             st.session_state.match_result_mode = False
             st.session_state.current_page = "2. Match Watchability"
             st.rerun()
@@ -1343,14 +1343,6 @@ def page_match_result(df: pd.DataFrame):
 
     home_disp = to_display_series(home_row)
     away_disp = to_display_series(away_row)
-
-    # Show back button at the top
-    if st.button("⬅️ Back to Dashboard", type="secondary"):
-        # Deactivate Match Result Analysis mode
-        st.session_state.match_result_mode = False
-        # Switch back to Match Watchability Dashboard
-        st.session_state.current_page = "2. Match Watchability Dashboard"
-        st.rerun()
 
     st.markdown("---")
 
@@ -1502,6 +1494,15 @@ def page_match_result(df: pd.DataFrame):
     st.caption(
         "Use this review to validate the form prediction model by comparing predicted versus actual form labels and inspecting raw match statistics for deeper insights."
     )
+
+    # Back to Dashboard button at the bottom
+    st.markdown("---")
+    if st.button("⬅️ Back to Match Watchability", type="primary", use_container_width=True):
+        # Deactivate Match Result Analysis mode
+        st.session_state.match_result_mode = False
+        # Switch back to Match Watchability
+        st.session_state.current_page = "2. Match Watchability"
+        st.rerun()
 
 
 # ---------------------------------------

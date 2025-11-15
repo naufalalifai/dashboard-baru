@@ -1259,13 +1259,19 @@ def page_match_result(df: pd.DataFrame):
         "Red Cards": away_disp["RedCards"],
     }
 
-    c_stats1, c_stats2 = st.columns(2)
-    with c_stats1:
-        st.write(f"**{sel['Home']}**")
-        st.table(pd.DataFrame(team_stats, index=["Value"]).T)
-    with c_stats2:
-        st.write(f"**{sel['Away']}**")
-        st.table(pd.DataFrame(opp_stats, index=["Value"]).T)
+    stats_rows = []
+    for metric in team_stats.keys():
+        stats_rows.append({
+            sel["Home"]: team_stats[metric],
+            "Metric": metric,
+            sel["Away"]: opp_stats[metric],
+        })
+    stats_df = pd.DataFrame(stats_rows)
+    st.dataframe(
+        stats_df[[sel["Home"], "Metric", sel["Away"]]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
     st.caption(
         "Use this review to validate the form model: compare predicted vs actual form tags and inspect the raw match stats for deeper context."

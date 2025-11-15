@@ -695,7 +695,7 @@ def page_user_guide():
     with col1:
         st.markdown("### 1️⃣ Setup")
         st.markdown("""
-        Go to **Season & Club Setup**
+        Go to **Select Season & Club**
         - Pick your season
         - Select favourite clubs (optional)
         """)
@@ -703,7 +703,7 @@ def page_user_guide():
     with col2:
         st.markdown("### 2️⃣ Explore")
         st.markdown("""
-        Visit **Match Watchability Dashboard**
+        Visit **Match Watchability**
         - Browse gameweeks (use ◀ ▶)
         - Check match scores (0-10)
         - See recommendations
@@ -712,7 +712,7 @@ def page_user_guide():
     with col3:
         st.markdown("### 3️⃣ Analyze")
         st.markdown("""
-        Click **"View Match Result Analysis"**
+        Click the **View Match Result Analysis** button
         - See predictions vs results
         - Review team stats
         - Check accuracy
@@ -722,31 +722,31 @@ def page_user_guide():
     st.markdown("---")
     st.markdown("## 📑 What Each Page Does")
 
-    st.markdown("### ⚽ Season & Club Setup")
+    st.markdown("### ⚽ Select Season & Club")
     st.markdown("""
     **Start here!** Choose your season and favourite teams.
-    - Star ratings show team quality (1-5 ⭐)
+    - Star ratings show team quality based on past performance (1-5 ⭐)
     - Settings apply to all pages
     """)
 
-    st.markdown("### 📺 Match Watchability Dashboard")
+    st.markdown("### 📺 Match Watchability")
     st.markdown("""
     **Find exciting matches!** Browse gameweeks and see match scores (0-10).
     - 👍 **5.0+** = Worth Watching
     - 🤔 **3.5-4.9** = Maybe
     - ⏭️ **<3.5** = Skip
-    - Score based on: Quality (40%) + Competitiveness (25%) + Unpredictability (15%) + Stakes (20%)
+    - Match score considers: Team quality (40%), how evenly matched (25%), outcome uncertainty (15%), and match importance (20%)
     """)
 
     st.markdown("### 📋 Match Result Analysis")
     st.markdown("""
     **Check accuracy!** See if predictions matched reality.
-    - Access via "View Match Result Analysis" button
+    - Access via the **View Match Result Analysis** button (on Match Watchability)
     - Compare predicted vs actual form
     - View detailed match stats
     """)
 
-    st.markdown("### 📈 Club Watchability Stats")
+    st.markdown("### 📈 Club Stats")
     st.markdown("""
     **Club deep-dive!** Season stats for any team.
     - Win/draw/loss records
@@ -754,10 +754,10 @@ def page_user_guide():
     - Match-by-match history
     """)
 
-    st.markdown("### 🏆 League Table Context")
+    st.markdown("### 🏆 League Standings")
     st.markdown("""
     **Track standings!** See league positions over time.
-    - Current table based on completed matches
+    - League table showing completed matches only
     - Position trend charts
     - Understand match stakes context
     """)
@@ -801,11 +801,13 @@ def page_user_guide():
 
         st.markdown("""
         ### 📅 Stakes Timing
-        Match importance grows as season progresses:
-        - Early (Weeks 1-9): 30% weight
-        - Mid (Weeks 10-25): 60% weight
-        - Late (Weeks 26-34): 90% weight
-        - Final (Weeks 35-38): 100% weight
+        Match importance grows as the season progresses:
+        - Early (Weeks 1-9): 30% weight (lower stakes)
+        - Mid (Weeks 10-25): 60% weight (moderate stakes)
+        - Late (Weeks 26-34): 90% weight (high stakes)
+        - Final (Weeks 35-38): 100% weight (critical stakes)
+
+        Same fixture has higher stakes later in the season!
         """)
 
     # Tips & Best Practices
@@ -814,10 +816,10 @@ def page_user_guide():
 
     st.markdown("""
     ### Navigation
-    1. **Start at Season & Club Setup** - Choose your preferences first
+    1. **Start at Select Season & Club** - Choose your preferences first
     2. **Use ◀ ▶ buttons** - Browse gameweeks quickly
     3. **Filter by favourites** - Focus on teams you care about
-    4. **Click "View Match Result Analysis"** - Jump to detailed stats
+    4. **Click the View Match Result Analysis button** - Jump to detailed stats
 
     ### Finding Great Matches
     - **5.0+ score** = Must watch
@@ -827,7 +829,7 @@ def page_user_guide():
     ### Good to Know
     - League table shows completed matches only
     - Stakes matter more late in the season
-    - Predictions aren't perfect - check accuracy on Match Result Analysis page
+    - Predictions aren't perfect - check accuracy on the Match Result Analysis page.
     """)
 
     # Glossary Section
@@ -842,9 +844,9 @@ def page_user_guide():
 
         **Off-Form** - Team underperforming recently
 
-        **MPI** - Match Performance Index (overall quality)
+        **MPI** - Match Performance Index: Overall team performance score
 
-        **H2H** - Head-to-head win rate between teams
+        **H2H** - Head-to-head win rate: Past results when teams played each other
         """)
 
     with col2:
@@ -853,23 +855,23 @@ def page_user_guide():
 
         **Pos** - League position (1 = first, 20 = last)
 
-        **GD** - Goal Difference (goals for - goals against)
+        **GD** - Goal Difference: Goals scored minus goals conceded
 
-        **Stakes** - Match importance (title race, relegation, etc.)
+        **Stakes** - Match importance: Title race, relegation battle, European qualification, etc.
         """)
 
     # Footer with call to action
     st.markdown("---")
-    st.success("🎉 Ready to start! Go to **Season & Club Setup** to begin.")
+    st.success("🎉 Ready to start! Go to **Select Season & Club** to begin.")
     st.caption("💡 Tip: You can return to this guide anytime from the sidebar menu.")
 
 
 # ---------------------------------------
-# PAGE 1 – Season & Club Setup
+# PAGE 1 – Select Season & Club
 # ---------------------------------------
 def page_setup(df: pd.DataFrame):
-    st.title("⚽ Match Watchability – Season & Club Setup")
-    st.info("This is the master filter page. Select your season and clubs here. These filters will be applied across all dashboard pages.")
+    st.title("⚽ Match Watchability – Select Season & Club")
+    st.info("Configure your season and favorite clubs here. Your selections will apply to all pages.")
 
     seasons = get_seasons(df)
     if not seasons:
@@ -950,18 +952,18 @@ def page_setup(df: pd.DataFrame):
         )
 
     st.success(
-        "✅ Filters saved! You can now navigate to the **Match Watchability Dashboard** to view fixtures."
+        "✅ Filters saved! You can now navigate to the **Match Watchability** page to view fixtures."
     )
 
 
 # ---------------------------------------
-# PAGE 2 – Match Watchability Dashboard
+# PAGE 2 – Match Watchability
 # ---------------------------------------
 def page_watchability(df: pd.DataFrame):
-    st.title("📺 Match Watchability Dashboard")
+    st.title("📺 Match Watchability")
 
     if "selected_season" not in st.session_state or st.session_state.selected_season is None:
-        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        st.warning("Please go to **Select Season & Club** first to choose a season.")
         return
 
     season = st.session_state.selected_season
@@ -998,11 +1000,11 @@ def page_watchability(df: pd.DataFrame):
 
         with controls[0]:
             st.write("")
-            prev_clicked = st.button("◀ ", key="gw_minus", use_container_width=True, type="secondary", disabled=prev_disabled)
+            prev_clicked = st.button("◀", key="gw_minus", use_container_width=True, type="secondary", disabled=prev_disabled)
 
         with controls[2]:
             st.write("")
-            next_clicked = st.button(" ▶", key="gw_plus", use_container_width=True, type="secondary", disabled=next_disabled)
+            next_clicked = st.button("▶", key="gw_plus", use_container_width=True, type="secondary", disabled=next_disabled)
 
         if prev_clicked:
             st.session_state.selected_gameweek = max(min_week, st.session_state.selected_gameweek - 1)
@@ -1126,7 +1128,7 @@ def page_watchability(df: pd.DataFrame):
     # Display table
     st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-    st.info("💡 **Tip:** Select a match below to view detailed analysis, then click the button to see full match results in the Match Result Analysis page!")
+    st.info("💡 **Tip:** First, select a match from the dropdown below. Then click **View Match Result Analysis** to see detailed statistics.")
 
     # Add score distribution summary
     st.markdown("#### Gameweek Summary")
@@ -1288,8 +1290,8 @@ def page_watchability(df: pd.DataFrame):
         st.rerun()
 
     st.caption(
-        "Use this page to quickly scan all fixtures in a gameweek and identify "
-        "which matches are likely to be high-quality clashes, one-sided contests, or low-excitement games."
+        "Use this page to scan gameweek fixtures and identify which matches are worth watching. "
+        "Look for high-quality clashes, competitive games, or skip low-excitement matches."
     )
 
 
@@ -1300,17 +1302,17 @@ def page_match_result(df: pd.DataFrame):
     st.title("📋 Match Result Analysis")
 
     if "selected_season" not in st.session_state or st.session_state.selected_season is None:
-        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        st.warning("Please go to **Select Season & Club** first to choose a season.")
         return
 
     # Check if a match has been selected from Dashboard
     if "selected_match" not in st.session_state or st.session_state.selected_match is None:
-        st.info("📍 No match selected. Please select a match from the **Match Watchability Dashboard** first.")
+        st.info("📍 No match selected. Please select a match from the **Match Watchability** page first.")
         st.markdown("### How to Use This Page:")
         st.markdown("""
         This page provides detailed match analysis with prediction validation. To access it:
 
-        1. **Navigate to Match Watchability Dashboard** (from the sidebar)
+        1. **Navigate to Match Watchability** (from the sidebar)
         2. **Select a gameweek** using the ◀ ▶ buttons
         3. **Choose a match** from the "Select a match to inspect in detail" dropdown
         4. **Click the "📋 View Match Result Analysis" button** at the bottom of the match details
@@ -1321,7 +1323,7 @@ def page_match_result(df: pd.DataFrame):
         # Add back button to return to dashboard
         if st.button("⬅️ Back to Dashboard", type="primary"):
             st.session_state.match_result_mode = False
-            st.session_state.current_page = "2. Match Watchability Dashboard"
+            st.session_state.current_page = "2. Match Watchability"
             st.rerun()
         return
     
@@ -1503,13 +1505,13 @@ def page_match_result(df: pd.DataFrame):
 
 
 # ---------------------------------------
-# PAGE 4 – Club Watchability Stats
+# PAGE 4 – Club Stats
 # ---------------------------------------
 def page_club_stats(df: pd.DataFrame):
-    st.title("📈 Club Watchability Stats")
+    st.title("📈 Club Stats")
 
     if "selected_season" not in st.session_state or st.session_state.selected_season is None:
-        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        st.warning("Please go to **Select Season & Club** first to choose a season.")
         return
 
     season = st.session_state.selected_season
@@ -1656,13 +1658,13 @@ def page_club_stats(df: pd.DataFrame):
 
 
 # ---------------------------------------
-# PAGE 5 – League Table Context
+# PAGE 5 – League Standings
 # ---------------------------------------
 def page_league_table(df: pd.DataFrame):
-    st.title("🏆 League Table Context")
+    st.title("🏆 League Standings")
 
     if "selected_season" not in st.session_state or st.session_state.selected_season is None:
-        st.warning("Please go to **Season & Club Setup** first to choose a season.")
+        st.warning("Please go to **Select Season & Club** first to choose a season.")
         return
 
     # Use selected season from session state
@@ -1747,7 +1749,7 @@ def page_league_table(df: pd.DataFrame):
 
     st.caption(
         "This table displays standings based on completed matches only. "
-        "The season is selected from **Season & Club Setup**, and the gameweek follows your **Dashboard** selection."
+        "The season is selected from **Select Season & Club**, and the gameweek follows your **Dashboard** selection."
     )
 
 
@@ -1756,7 +1758,7 @@ def page_league_table(df: pd.DataFrame):
 # ---------------------------------------
 def main():
     st.set_page_config(
-        page_title="EPL Match Watchability Dashboard",
+        page_title="EPL Match Watchability",
         layout="wide",
     )
 
@@ -1780,10 +1782,10 @@ def main():
         # Use session state to control the selected page
         page_options = [
             "0. User Guide",
-            "1. Season & Club Setup",
-            "2. Match Watchability Dashboard",
-            "4. Club Watchability Stats",
-            "5. League Table Context",
+            "1. Select Season & Club",
+            "2. Match Watchability",
+            "4. Club Stats",
+            "5. League Standings",
         ]
 
         # Get the index of current page

@@ -3,6 +3,7 @@ import os
 import pickle
 from functools import lru_cache
 from pathlib import Path
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -427,6 +428,26 @@ def build_league_table_up_to_week(df: pd.DataFrame, season, current_week):
     grouped.index = grouped.index + 1
     grouped.insert(0, "Pos", grouped.index)
     return grouped
+
+
+def build_position_trends(df: pd.DataFrame, season: str, max_week: int) -> pd.DataFrame:
+    """Build cumulative position trajectory for each club up to max_week."""
+    if max_week <= 0:
+        return pd.DataFrame()
+
+    frames = []
+    for week in range(1, max_week + 1):
+        week_table = build_league_table_up_to_week(df, season, week)
+        if week_table.empty:
+            continue
+        frame = week_table[["Team", "Pos"]].copy()
+        frame["Week"] = week
+        frames.append(frame)
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pd.concat(frames, ignore_index=True)
 
 
 def get_team_position_at_week(df: pd.DataFrame, season, team: str, week: int) -> int:
@@ -1473,6 +1494,53 @@ def page_league_table(df: pd.DataFrame):
             st.info("No league data available.")
         else:
             st.dataframe(table, use_container_width=True)
+            trend_df = build_position_trends(df, season, display_gw)
+            if trend_df.empty:
+                st.info("Not enough data to plot league position changes yet.")
+            else:
+                st.markdown("#### League position changes over time")
+                teams_available = sorted(trend_df["Team"].unique())
+                fav_defaults = [
+                    club for club in st.session_state.get("fav_clubs", [])
+                    if club in teams_available
+                ]
+                default_selection = fav_defaults or teams_available[: min(6, len(teams_available))]
+                selected = st.multiselect(
+                    "Select clubs to plot",
+                    teams_available,
+                    default=default_selection,
+                    key=f"trend_clubs_{season}",
+                )
+                if not selected:
+                    st.info("Select at least one club to see the time-series chart.")
+                else:
+                    chart_df = trend_df[trend_df["Team"].isin(selected)]
+                    chart = (
+                        alt.Chart(chart_df)
+                        .mark_line(point=True)
+                        .encode(
+                            x=alt.X(
+                                "Week:Q",
+                                title="Gameweek",
+                                scale=alt.Scale(domain=[1, display_gw], nice=False, zero=False),
+                                axis=alt.Axis(format="d", tickMinStep=1),
+                            ),
+                            y=alt.Y(
+                                "Pos:Q",
+                                title="League Position",
+                                scale=alt.Scale(domain=[20, 1], nice=False),
+                                axis=alt.Axis(values=list(range(1, 21))),
+                            ),
+                            color=alt.Color("Team:N", title="Club"),
+                            tooltip=[
+                                alt.Tooltip("Team:N", title="Club"),
+                                alt.Tooltip("Week:Q", title="Week"),
+                                alt.Tooltip("Pos:Q", title="Position"),
+                            ],
+                        )
+                        .properties(height=400)
+                    )
+                    st.altair_chart(chart, use_container_width=True)
 
     st.caption(
         "This table shows standings based on completed matches only. "

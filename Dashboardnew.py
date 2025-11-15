@@ -322,10 +322,10 @@ def calculate_match_worthiness(
 
     # Calculate breakdown percentages
     breakdown = {
-        "quality_pct": round((quality_score / total_score * 100) if total_score > 0 else 0, 1),
-        "competitiveness_pct": round((competitiveness_score / total_score * 100) if total_score > 0 else 0, 1),
-        "unpredictability_pct": round((unpredictability_score / total_score * 100) if total_score > 0 else 0, 1),
-        "stakes_pct": round((stakes_score / total_score * 100) if total_score > 0 else 0, 1),
+        "quality_pct": round((quality_score / total_score * 100) if total_score > 0 else 0, 2),
+        "competitiveness_pct": round((competitiveness_score / total_score * 100) if total_score > 0 else 0, 2),
+        "unpredictability_pct": round((unpredictability_score / total_score * 100) if total_score > 0 else 0, 2),
+        "stakes_pct": round((stakes_score / total_score * 100) if total_score > 0 else 0, 2),
     }
 
     return {
@@ -905,7 +905,7 @@ def page_watchability(df: pd.DataFrame):
         {
             "Match": f"{m['Home']} vs {m['Away']}",
             "Date": m["MatchDate"].date(),
-            "Score": f"{m['WorthinessScore']:.1f}/10",
+            "Score": f"{m['WorthinessScore']:.2f}/10",
             "Recommendation": m["Watchability"],
             "Stakes": m["StakesContext"],
             "Home (Pos)": f"{m['Home']} ({m['HomePosition'] if m['HomePosition'] else '-'})",
@@ -950,7 +950,7 @@ def page_watchability(df: pd.DataFrame):
 
     # Worthiness Score Breakdown
     score_color = get_score_color(sel["WorthinessScore"])
-    st.markdown(f"#### Match Worthiness Score: <span style='color:{score_color}; font-size:2em; font-weight:bold;'>{sel['WorthinessScore']:.1f}/10</span>", unsafe_allow_html=True)
+    st.markdown(f"#### Match Worthiness Score: <span style='color:{score_color}; font-size:2em; font-weight:bold;'>{sel['WorthinessScore']:.2f}/10</span>", unsafe_allow_html=True)
     st.markdown(f"**Recommendation:** {sel['Watchability']} (Priority: {sel['Priority']})")
     st.markdown(f"**Stakes Context:** {sel['StakesContext']}")
 
@@ -986,17 +986,17 @@ def page_watchability(df: pd.DataFrame):
         pos_text = f" (Position: {sel['HomePosition']})" if sel['HomePosition'] else ""
         st.markdown(f"**{sel['Home']}{pos_text}**")
         arrow = "⬆️ On-form" if sel["HomeLabel"] == 1 else "⬇️ Off-form"
-        st.metric("Predicted form", arrow, f"{sel['HomeProba']*100:.1f}%")
+        st.metric("Predicted form", arrow, f"{sel['HomeProba']*100:.2f}%")
         st.write(f"Last 5 results: {last5_record_string(df, season, sel['Home'], sel['MatchDate'])}")
-        st.write(f"H2H win rate vs {sel['Away']}: {home_disp['h2h_win_rate']*100:.1f}%")
+        st.write(f"H2H win rate vs {sel['Away']}: {home_disp['h2h_win_rate']*100:.2f}%")
 
     with c2:
         pos_text = f" (Position: {sel['AwayPosition']})" if sel['AwayPosition'] else ""
         st.markdown(f"**{sel['Away']}{pos_text}**")
         arrow_o = "⬆️ On-form" if sel["AwayLabel"] == 1 else "⬇️ Off-form"
-        st.metric("Predicted form", arrow_o, f"{sel['AwayProba']*100:.1f}%")
+        st.metric("Predicted form", arrow_o, f"{sel['AwayProba']*100:.2f}%")
         st.write(f"Last 5 results: {last5_record_string(df, season, sel['Away'], sel['MatchDate'])}")
-        st.write(f"H2H (from {sel['Away']} perspective): {away_disp['h2h_win_rate']*100:.1f}%")
+        st.write(f"H2H (from {sel['Away']} perspective): {away_disp['h2h_win_rate']*100:.2f}%")
 
     st.markdown("#### Key history stats (last 5 & season averages)")
 
@@ -1024,7 +1024,7 @@ def page_watchability(df: pd.DataFrame):
         if pd.isna(value):
             return "-"
         if "rate" in col_name or "accuracy" in col_name:
-            return f"{float(value) * 100:.1f}%"
+            return f"{float(value) * 100:.2f}%"
         return f"{float(value):.2f}"
 
     def build_comparison_rows(metric_config):
@@ -1187,7 +1187,7 @@ def page_match_result(df: pd.DataFrame):
             "pred_proba": home_pred_proba,
             "actual": home_actual,
             "last5": last5_record_string(df, season, sel["Home"], sel["MatchDate"]),
-            "h2h": f"{home_disp['h2h_win_rate']*100:.1f}%",
+            "h2h": f"{home_disp['h2h_win_rate']*100:.2f}%",
         },
         {
             "team": sel["Away"],
@@ -1195,7 +1195,7 @@ def page_match_result(df: pd.DataFrame):
             "pred_proba": away_pred_proba,
             "actual": away_actual,
             "last5": last5_record_string(df, season, sel["Away"], sel["MatchDate"]),
-            "h2h": f"{away_disp['h2h_win_rate']*100:.1f}%",
+            "h2h": f"{away_disp['h2h_win_rate']*100:.2f}%",
         },
     ]
 
@@ -1209,7 +1209,7 @@ def page_match_result(df: pd.DataFrame):
             st.metric(
                 "Predicted Form",
                 predicted_status,
-                f"{row['pred_proba']*100:.1f}% confidence",
+                f"{row['pred_proba']*100:.2f}% confidence",
             )
             st.metric("Actual Form", actual_status)
             if correct:
@@ -1221,14 +1221,14 @@ def page_match_result(df: pd.DataFrame):
 
     match_accuracy = sum(1 for r in team_form_rows if r["pred_label"] == r["actual"])
     match_accuracy_pct = match_accuracy / len(team_form_rows) * 100
-    st.metric("Form prediction accuracy for this match", f"{match_accuracy_pct:.0f}%", f"{match_accuracy}/2 correct")
+    st.metric("Form prediction accuracy for this match", f"{match_accuracy_pct:.2f}%", f"{match_accuracy}/2 correct")
 
     form_comparison_df = pd.DataFrame([
         {
             "Team": row["team"],
             "Predicted": "On-form" if row["pred_label"] == 1 else "Off-form",
             "Actual": "On-form" if row["actual"] == 1 else "Off-form",
-            "Confidence": f"{row['pred_proba']*100:.1f}%",
+            "Confidence": f"{row['pred_proba']*100:.2f}%",
             "Correct?": "Yes" if row["pred_label"] == row["actual"] else "No",
         }
         for row in team_form_rows
@@ -1356,15 +1356,15 @@ def page_club_stats(df: pd.DataFrame):
     c1, c2, c3 = st.columns(3)
     c1.metric("Matches played", total_matches)
     c2.metric("W / D / L", f"{wins} / {draws} / {losses}")
-    c3.metric("Season win rate", f"{win_rate*100:.1f}%")
+    c3.metric("Season win rate", f"{win_rate*100:.2f}%")
 
     c4, c5, c6 = st.columns(3)
     c4.metric("Goals For / Against", f"{goals_for} / {goals_against}")
-    c5.metric("Average MPI", f"{avg_mpi:.3f}")
+    c5.metric("Average MPI", f"{avg_mpi:.2f}")
     c6.metric("On-form vs Off-form (actual)", f"{on_form} / {off_form}")
 
     if acc is not None:
-        st.metric("Model accuracy for this club", f"{acc*100:.1f}%")
+        st.metric("Model accuracy for this club", f"{acc*100:.2f}%")
 
     st.markdown("#### Result breakdown vs predicted form")
     pred_label_map = {1: "Predicted On-form", 0: "Predicted Off-form"}
@@ -1389,7 +1389,7 @@ def page_club_stats(df: pd.DataFrame):
     pred_vs_results["Win %"] = pred_vs_results.apply(
         lambda row: (row["W"] / row["Matches"] * 100) if row["Matches"] else 0.0,
         axis=1,
-    ).round(1)
+    ).round(2)
     st.dataframe(pred_vs_results, use_container_width=True)
     st.caption("Shows actual W/D/L outcomes split by whether the model tagged this club as on-form or off-form.")
 

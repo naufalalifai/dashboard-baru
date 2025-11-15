@@ -1001,26 +1001,57 @@ def page_watchability(df: pd.DataFrame):
     st.markdown("#### Key history stats (last 5 & season averages)")
 
     stats_cols_last5 = [
-        "avg_goals_scored_last5", "avg_goals_conceded_last5",
-        "avg_shots_last5", "avg_shots_on_target_last5",
-        "avg_shot_conversion_rate_last5", "avg_shot_accuracy_rate_last5",
+        ("avg_goals_scored_last5", "Avg goals scored"),
+        ("avg_goals_conceded_last5", "Avg goals conceded"),
+        ("avg_shots_last5", "Avg shots"),
+        ("avg_shots_on_target_last5", "Avg shots on target"),
+        ("avg_shot_conversion_rate_last5", "Shot conversion rate"),
+        ("avg_shot_accuracy_rate_last5", "Shot accuracy rate"),
     ]
     stats_cols_season = [
-        "season_avg_goals_scored", "season_avg_goals_conceded",
-        "avg_shots_season", "avg_shots_on_target_season",
-        "avg_shot_conversion_rate_season", "avg_shot_accuracy_rate_season",
+        ("season_avg_goals_scored", "Avg goals scored"),
+        ("season_avg_goals_conceded", "Avg goals conceded"),
+        ("avg_shots_season", "Avg shots"),
+        ("avg_shots_on_target_season", "Avg shots on target"),
+        ("avg_shot_conversion_rate_season", "Shot conversion rate"),
+        ("avg_shot_accuracy_rate_season", "Shot accuracy rate"),
     ]
 
-    team_stats = {col: home_disp[col] for col in stats_cols_last5 + stats_cols_season}
-    opp_stats = {col: away_disp[col] for col in stats_cols_last5 + stats_cols_season}
+    home_label = sel["Home"]
+    away_label = sel["Away"]
 
-    col_team, col_opp = st.columns(2)
-    with col_team:
-        st.write(f"**{sel['Home']}**")
-        st.table(pd.DataFrame(team_stats, index=["Value"]).T)
-    with col_opp:
-        st.write(f"**{sel['Away']}**")
-        st.table(pd.DataFrame(opp_stats, index=["Value"]).T)
+    def format_stat(col_name, value):
+        if pd.isna(value):
+            return "-"
+        if "rate" in col_name or "accuracy" in col_name:
+            return f"{float(value) * 100:.1f}%"
+        return f"{float(value):.2f}"
+
+    def build_comparison_rows(metric_config):
+        rows = []
+        for col, display_name in metric_config:
+            rows.append({
+                home_label: format_stat(col, home_disp[col]),
+                "Metric": display_name,
+                away_label: format_stat(col, away_disp[col]),
+            })
+        return rows
+
+    last5_df = pd.DataFrame(build_comparison_rows(stats_cols_last5))
+    season_df = pd.DataFrame(build_comparison_rows(stats_cols_season))
+
+    st.markdown("##### Last 5 matches")
+    st.dataframe(
+        last5_df[[home_label, "Metric", away_label]],
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.markdown("##### Season averages")
+    st.dataframe(
+        season_df[[home_label, "Metric", away_label]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
     # Button to navigate to Match Result View
     st.markdown("---")
@@ -1334,6 +1365,33 @@ def page_club_stats(df: pd.DataFrame):
 
     if acc is not None:
         st.metric("Model accuracy for this club", f"{acc*100:.1f}%")
+
+    st.markdown("#### Result breakdown vs predicted form")
+    pred_label_map = {1: "Predicted On-form", 0: "Predicted Off-form"}
+    pred_vs_results = (
+        club_df.assign(
+            ResultCode=club_df["Result"].apply(result_to_code),
+            PredForm=club_df["PredLabel"].map(pred_label_map).fillna("Predicted Off-form")
+        )
+        .groupby("PredForm")["ResultCode"]
+        .value_counts()
+        .unstack(fill_value=0)
+    )
+    for col in ["W", "D", "L"]:
+        if col not in pred_vs_results.columns:
+            pred_vs_results[col] = 0
+    pred_vs_results = pred_vs_results[["W", "D", "L"]]
+    pred_vs_results = pred_vs_results.reindex(
+        ["Predicted On-form", "Predicted Off-form"]
+    ).fillna(0)
+    pred_vs_results[["W", "D", "L"]] = pred_vs_results[["W", "D", "L"]].astype(int)
+    pred_vs_results["Matches"] = pred_vs_results[["W", "D", "L"]].sum(axis=1)
+    pred_vs_results["Win %"] = pred_vs_results.apply(
+        lambda row: (row["W"] / row["Matches"] * 100) if row["Matches"] else 0.0,
+        axis=1,
+    ).round(1)
+    st.dataframe(pred_vs_results, use_container_width=True)
+    st.caption("Shows actual W/D/L outcomes split by whether the model tagged this club as on-form or off-form.")
 
     st.markdown("#### Aggregated raw match stats (this season)")
     agg_stats = {

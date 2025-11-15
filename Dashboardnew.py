@@ -677,6 +677,308 @@ def get_logo_path(team: str):
 
 
 # ---------------------------------------
+# PAGE 0 – User Guide
+# ---------------------------------------
+def page_user_guide():
+    st.title("📖 User Guide - EPL Match Watchability Dashboard")
+
+    st.markdown("""
+    Welcome to the **EPL Match Watchability Dashboard**! This guide will help you navigate and make the most of all the features available in this application.
+    """)
+
+    # Quick Start Section
+    st.markdown("---")
+    st.markdown("## 🚀 Quick Start Guide")
+    st.markdown("""
+    Follow these simple steps to get started:
+
+    1. **Navigate to Season & Club Setup** - Select your preferred season and favourite clubs
+    2. **Explore Match Watchability Dashboard** - View gameweek fixtures and match recommendations
+    3. **Analyze Match Details** - Click on matches to see detailed statistics and predictions
+    4. **Review Club Performance** - Check individual club statistics and model accuracy
+    5. **Track League Standings** - Monitor league table positions and trends over time
+    """)
+
+    # Pages Overview Section
+    st.markdown("---")
+    st.markdown("## 📑 Dashboard Pages Overview")
+
+    # Page 1: Season & Club Setup
+    with st.expander("⚽ 1. Season & Club Setup", expanded=False):
+        st.markdown("""
+        **Purpose:** Configure your viewing preferences for the entire dashboard.
+
+        **What You Can Do:**
+        - **Select Season:** Choose which EPL season to analyze
+        - **Choose Favourite Clubs:** Select your preferred teams for filtering
+        - **View Club Ratings:** See star ratings for Overall, Attack, Defense, and Control
+        - **Check Previous Season Positions:** Review where teams finished last season
+
+        **Key Information:**
+        - Star ratings (1-5 ⭐) are calculated based on historical performance data
+        - Ratings use previous season data when available, otherwise global averages
+        - Your selections here filter content across all other dashboard pages
+
+        **Tip:** Start here every time to set your viewing preferences!
+        """)
+
+    # Page 2: Match Watchability Dashboard
+    with st.expander("📺 2. Match Watchability Dashboard", expanded=False):
+        st.markdown("""
+        **Purpose:** Find the most exciting matches to watch each gameweek.
+
+        **What You Can Do:**
+        - **Navigate Gameweeks:** Use ◀ ▶ buttons to browse through weeks
+        - **Filter Fixtures:** View all matches or only your favourite clubs
+        - **Check Match Scores:** See worthiness scores (0-10) for each fixture
+        - **View Recommendations:** Get "Worth Watching", "Maybe", or "Skip" suggestions
+        - **Analyze Stakes:** Understand match importance (Title Race, Relegation Battle, etc.)
+        - **Inspect Details:** Select any match for in-depth team form analysis
+
+        **Match Worthiness Score Breakdown:**
+        - **Quality (40%):** Average team performance level (0-4 points)
+        - **Competitiveness (25%):** How evenly matched the teams are (0-2.5 points)
+        - **Unpredictability (15%):** Outcome uncertainty (0-1.5 points)
+        - **Stakes (20%):** Match importance based on league positions and timing (0-2 points)
+
+        **Recommendation Categories:**
+        - 👍 **Worth Watching** (5.0-10.0): High-quality, competitive matches
+        - 🤔 **Maybe** (3.5-4.9): Moderate entertainment value
+        - ⏭️ **Skip** (0.0-3.4): Low-excitement games
+
+        **Tip:** Use the "View Full Match Analysis" button to jump to Match Result Review!
+        """)
+
+    # Page 3: Match Result Review
+    with st.expander("📋 3. Match Result Review", expanded=False):
+        st.markdown("""
+        **Purpose:** Deep-dive analysis of individual matches with prediction validation.
+
+        **What You Can Do:**
+        - **View Final Scores:** See actual match results with team logos
+        - **Compare Predictions vs Actuals:** Check if form predictions were correct
+        - **Analyze Team Form:** Review last 5 results and head-to-head records
+        - **Inspect Match Statistics:** Access detailed stats (shots, corners, cards, etc.)
+        - **Validate Model Accuracy:** See prediction confidence levels and correctness
+
+        **How to Access:**
+        - Navigate to **Match Watchability Dashboard**
+        - Select a gameweek and choose a match from the dropdown
+        - Scroll down to the "Want More Details?" section
+        - Click the **"📋 View Full Match Analysis in Match Result Review"** button
+        - The match will automatically load with full results and statistics
+
+        **Key Metrics:**
+        - **Predicted Form:** Model's prediction (On-form/Off-form) with confidence %
+        - **Actual Form:** True form label from match outcome
+        - **Form Accuracy:** Whether the model correctly predicted both teams' form
+
+        **Tip:** Use this page to understand model reliability and match context!
+        """)
+
+    # Page 4: Club Watchability Stats
+    with st.expander("📈 4. Club Watchability Stats", expanded=False):
+        st.markdown("""
+        **Purpose:** Comprehensive statistics for individual clubs throughout the season.
+
+        **What You Can Do:**
+        - **Select Any Club:** Choose from teams in your selected season
+        - **View Season Summary:** See wins, draws, losses, and goals
+        - **Check Form Distribution:** Compare on-form vs off-form matches
+        - **Analyze Model Performance:** Review prediction accuracy for this specific club
+        - **Inspect Result Breakdowns:** See W/D/L split by predicted form
+        - **Review Aggregated Stats:** Total shots, corners, fouls, and cards
+        - **Browse Match History:** Access detailed match-by-match data
+
+        **Key Metrics:**
+        - **Matches Played:** Total games in the selected timeframe
+        - **Season Win Rate:** Percentage of matches won
+        - **Average MPI:** Mean Performance Index (overall team quality metric)
+        - **Model Accuracy:** How often predictions matched actual form for this club
+
+        **Filtering:**
+        - Stats automatically filter based on Dashboard gameweek selection
+        - Shows completed matches only (up to week before selected gameweek)
+        - Respects your "Favourite clubs only" preference
+
+        **Tip:** Compare different clubs to find the most predictable or unpredictable teams!
+        """)
+
+    # Page 5: League Table Context
+    with st.expander("🏆 5. League Table Context", expanded=False):
+        st.markdown("""
+        **Purpose:** Track league standings and position changes throughout the season.
+
+        **What You Can Do:**
+        - **View Current Standings:** See league table based on completed matches
+        - **Track Position Changes:** Visualize team movements over time
+        - **Select Teams to Plot:** Compare position trajectories for multiple clubs
+        - **Understand Stakes Context:** See why certain matches have high stakes
+
+        **Table Columns:**
+        - **Pos:** Current league position
+        - **Played:** Matches played
+        - **W/D/L:** Wins, Draws, Losses
+        - **GF/GA:** Goals For and Goals Against
+        - **GD:** Goal Difference
+        - **Points:** Total league points
+
+        **Position Changes Chart:**
+        - Y-axis shows league position (1 = top, 20 = bottom)
+        - X-axis shows gameweek progression
+        - Each line represents a team's trajectory
+        - Lower position = better standing
+
+        **Tip:** Use this to understand stakes in Match Watchability (e.g., Title Race, Relegation Battle)!
+        """)
+
+    # Key Features Section
+    st.markdown("---")
+    st.markdown("## ✨ Key Features Explained")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        ### 🎯 Form Predictions
+        The dashboard uses machine learning to predict whether teams are "on-form" or "off-form" based on:
+        - Recent match results (last 5 games)
+        - Goals scored and conceded trends
+        - Shooting statistics and accuracy
+        - Head-to-head historical performance
+        - Season-long patterns
+
+        **Confidence Level:** Shown as a percentage (e.g., 75.3%)
+        """)
+
+        st.markdown("""
+        ### ⭐ Team Ratings
+        Star ratings (1-5) evaluate teams across four dimensions:
+        - **Overall:** Based on MPI (Match Performance Index)
+        - **Attack:** Offensive capabilities and goal-scoring
+        - **Defense:** Defensive strength and clean sheets
+        - **Control:** Possession and game management
+
+        Higher stars = better performance in that category
+        """)
+
+    with col2:
+        st.markdown("""
+        ### 📊 Stakes Scoring
+        Match importance is calculated based on:
+        - **League Positions:** Where teams sit in the table
+        - **Match Context:** Title race, relegation battle, European spots
+        - **Season Timing:** Early season (30% weight) → Final stretch (100% weight)
+
+        **Stakes Categories:**
+        - Title Race (both top 3)
+        - Relegation Six-Pointer (both bottom 3)
+        - Champions League Race (positions 4-7)
+        - David vs Goliath (10+ position gap)
+        - And more...
+        """)
+
+        st.markdown("""
+        ### 📈 Time-Weighted Stakes
+        Match importance adjusts throughout the season:
+        - **Weeks 1-9:** 30% weight (Early Season)
+        - **Weeks 10-25:** 60% weight (Mid Season)
+        - **Weeks 26-34:** 90% weight (Late Season)
+        - **Weeks 35-38:** 100% weight (Final Stretch)
+
+        Same fixture has higher stakes later in the season!
+        """)
+
+    # Tips & Best Practices
+    st.markdown("---")
+    st.markdown("## 💡 Tips & Best Practices")
+
+    tips_col1, tips_col2 = st.columns(2)
+
+    with tips_col1:
+        st.markdown("""
+        ### 📌 Navigation Tips
+        - ✅ Always start at **Season & Club Setup** to configure preferences
+        - ✅ Use gameweek navigation (◀ ▶) to quickly browse through weeks
+        - ✅ Toggle between "All fixtures" and "Favourite clubs only" for focused viewing
+        - ✅ Look for the "Want More Details?" section to navigate to Match Result Review
+        - ✅ Click the "Back to Dashboard" button to return from Match Result Review
+        - ✅ Your selections persist across pages during the session
+        - ✅ The sidebar always shows a reminder to check the User Guide
+        """)
+
+        st.markdown("""
+        ### 🎬 Finding Great Matches
+        - Look for scores **5.0+** for guaranteed entertainment
+        - Check **Stakes Context** for storyline importance
+        - Compare **team positions** to understand match significance
+        - Review **form predictions** to spot potential upsets
+        - Use **competitiveness score** to find evenly-matched games
+        """)
+
+    with tips_col2:
+        st.markdown("""
+        ### 🔍 Analysis Tips
+        - Compare **predicted vs actual form** to evaluate model reliability
+        - Check **head-to-head records** for historical context
+        - Review **last 5 results** to understand recent momentum
+        - Use **club stats** to identify overperforming/underperforming teams
+        - Track **position changes** to spot rising or falling clubs
+        """)
+
+        st.markdown("""
+        ### ⚠️ Things to Keep in Mind
+        - League table shows **completed matches only** (week-1)
+        - Stakes increase as the season progresses (time-weighted)
+        - Star ratings use previous season data when available
+        - Model accuracy varies by team and situation
+        - Gameweek 1 has no prior standings (positions unknown)
+        """)
+
+    # Glossary Section
+    st.markdown("---")
+    st.markdown("## 📚 Glossary")
+
+    glossary_items = {
+        "**MPI (Match Performance Index)**": "A composite metric measuring overall team performance quality across multiple dimensions.",
+        "**Head-to-Head (H2H)**": "Historical win rate between two specific teams when they face each other.",
+        "**On-Form**": "A team performing well based on recent results, goals, and shot metrics (predicted or actual).",
+        "**Off-Form**": "A team underperforming based on recent metrics and patterns.",
+        "**Stakes Score**": "Measure of match importance (0-2.0) based on league positions and season timing.",
+        "**Worthiness Score**": "Overall match entertainment value (0-10) combining quality, competitiveness, unpredictability, and stakes.",
+        "**Shot Conversion Rate**": "Percentage of shots that result in goals (goals/shots).",
+        "**Shot Accuracy Rate**": "Percentage of shots that are on target (shots on target/total shots).",
+        "**Clean Sheet Rate**": "Percentage of matches where a team concedes zero goals.",
+        "**GW (Gameweek)**": "A round of matches in the Premier League season (typically 38 gameweeks total).",
+        "**Position/Pos**": "Team's current standing in the league table (1 = first place, 20 = last place).",
+        "**GD (Goal Difference)**": "Goals For minus Goals Against (higher is better).",
+    }
+
+    # Display glossary in two columns
+    glossary_items_list = list(glossary_items.items())
+    mid_point = len(glossary_items_list) // 2
+
+    gloss_col1, gloss_col2 = st.columns(2)
+
+    with gloss_col1:
+        for term, definition in glossary_items_list[:mid_point]:
+            st.markdown(f"{term}")
+            st.caption(definition)
+            st.write("")
+
+    with gloss_col2:
+        for term, definition in glossary_items_list[mid_point:]:
+            st.markdown(f"{term}")
+            st.caption(definition)
+            st.write("")
+
+    # Footer with call to action
+    st.markdown("---")
+    st.success("🎉 You're ready to explore! Navigate to **Season & Club Setup** to begin your analysis.")
+    st.caption("Need help? Come back to this guide anytime from the navigation menu.")
+
+
+# ---------------------------------------
 # PAGE 1 – Season & Club Setup
 # ---------------------------------------
 def page_setup(df: pd.DataFrame):
@@ -938,6 +1240,8 @@ def page_watchability(df: pd.DataFrame):
     # Display table
     st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
+    st.info("💡 **Tip:** Select a match below to view detailed analysis, then click the button to see full match results in the Match Result Review page!")
+
     # Add score distribution summary
     st.markdown("#### Gameweek Summary")
     col1, col2, col3 = st.columns(3)
@@ -1076,7 +1380,14 @@ def page_watchability(df: pd.DataFrame):
 
     # Button to navigate to Match Result View
     st.markdown("---")
-    if st.button("📋 View Full Match Analysis in Match Result Review", type="primary"):
+    st.markdown("### 📋 Want More Details?")
+    st.write(f"View the complete match analysis for **{sel['Home']} vs {sel['Away']}** including:")
+    st.write("• Actual match results and final score")
+    st.write("• Prediction accuracy (predicted vs actual form)")
+    st.write("• Detailed match statistics (shots, corners, cards, fouls)")
+    st.write("• Team logos and visual presentation")
+
+    if st.button("📋 View Full Match Analysis in Match Result Review", type="primary", use_container_width=True):
         # Store the selected match details in session state
         st.session_state.selected_match = {
             "home_index": sel["home_index"],
@@ -1109,11 +1420,18 @@ def page_match_result(df: pd.DataFrame):
 
     # Check if a match has been selected from Dashboard
     if "selected_match" not in st.session_state or st.session_state.selected_match is None:
-        st.info("Please select a match from the **Match Watchability Dashboard** first.")
+        st.info("📍 No match selected. Please select a match from the **Match Watchability Dashboard** first.")
         st.markdown("### How to Use This Page:")
-        st.markdown("1. Navigate to **Match Watchability Dashboard**")
-        st.markdown("2. Select a gameweek and view fixtures")
-        st.markdown("3. Choose a match and click the button to view the full analysis here")
+        st.markdown("""
+        This page provides detailed match analysis with prediction validation. To access it:
+
+        1. **Navigate to Match Watchability Dashboard** (from the sidebar)
+        2. **Select a gameweek** using the ◀ ▶ buttons
+        3. **Choose a match** from the "Select a match to inspect in detail" dropdown
+        4. **Click the "📋 View Full Match Analysis in Match Result Review" button** at the bottom of the match details
+
+        The selected match will then appear here with comprehensive statistics and form predictions!
+        """)
 
         # Add back button to return to dashboard
         if st.button("⬅️ Back to Dashboard", type="primary"):
@@ -1561,7 +1879,7 @@ def main():
 
     # Initialize current_page in session state if not exists
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "1. Season & Club Setup"
+        st.session_state.current_page = "0. User Guide"
 
     # Initialize match_result_mode flag
     if "match_result_mode" not in st.session_state:
@@ -1576,6 +1894,7 @@ def main():
 
         # Use session state to control the selected page
         page_options = [
+            "0. User Guide",
             "1. Season & Club Setup",
             "2. Match Watchability Dashboard",
             "4. Club Watchability Stats",
@@ -1595,7 +1914,13 @@ def main():
         if page != st.session_state.current_page:
             st.session_state.current_page = page
 
-        if page.startswith("1."):
+        # Add helpful info in sidebar
+        st.sidebar.markdown("---")
+        st.sidebar.info("💡 New to the dashboard? Check out the **User Guide** for detailed instructions!")
+
+        if page.startswith("0."):
+            page_user_guide()
+        elif page.startswith("1."):
             page_setup(df)
         elif page.startswith("2."):
             page_watchability(df)
